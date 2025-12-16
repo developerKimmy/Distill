@@ -1,0 +1,29 @@
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+class Settings(BaseSettings):
+    # App
+    APP_NAME: str = "Atlas"
+    DEBUG: bool = True
+
+    # Database
+    DATABASE_URL: str = "postgresql+asyncpg://atlas:atlas_dev_password@localhost:5432/atlas_db"
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # DeepSeek
+    DEEPSEEK_API_KEY: str = ""
+
+    # Celery
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+
+    class Config:
+        env_file = ".env"
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+settings = get_settings()
