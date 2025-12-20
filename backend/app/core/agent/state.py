@@ -14,6 +14,9 @@ class AgentState(TypedDict):
     # 현재 단계
     current_step: str
 
+    # 계획
+    plan: str
+
     # 검색 결과
     search_results: list[dict]
 

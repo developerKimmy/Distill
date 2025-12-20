@@ -1,9 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
-from app.api.routes import health, research
+from app.core.config import settings
 
+# 모델 import (relationship 등록용)
+from app.auth.models import User
+from app.workspace.models import Workspace
+from app.batch.models import BatchRun
+from app.issues.models import Issue, IssueDailySnapshot, IssueArticle
+from app.videos.models import IssueVideo, IssueComment
+from app.insights.models import IssueInsight
+
+from app.auth.router import router as auth_router
+from app.issues.router import router as issues_router, report_router
+from app.batch.router import router as batch_router
+
+# ... 나머지 코드
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI Research Agent",
@@ -13,15 +25,22 @@ app = FastAPI(
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite 기본 포트
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # 라우터 등록
-app.include_router(health.router, tags=["health"])
-app.include_router(research.router, prefix="/api/research", tags=["research"])
+app.include_router(auth_router, prefix="/api")
+app.include_router(issues_router, prefix="/api")
+app.include_router(report_router, prefix="/api")
+app.include_router(batch_router, prefix="/api")
+
+
+@app.get("/health", tags=["health"])
+def health_check():
+    return {"status": "healthy", "service": settings.APP_NAME}
 
 
 @app.on_event("startup")
