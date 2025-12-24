@@ -23,7 +23,7 @@ class BatchRun(Base, UUIDMixin):
         nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    sessions_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    issues_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships

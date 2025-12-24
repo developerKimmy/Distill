@@ -1,5 +1,8 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -17,6 +20,9 @@ class Settings(BaseSettings):
     # DeepSeek
     DEEPSEEK_API_KEY: str = ""
 
+    #OPENAI
+    OPEN_AI_API_KEY: str = ""
+
     # Tavily
     TAVILY_API_KEY: str = ""
 
@@ -31,13 +37,22 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
+    # Email (Gmail SMTP)
+    GMAIL_USER: str = ""
+    GMAIL_APP_PASSWORD: str = ""
+
+    # CORS
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(_env_file=BACKEND_DIR / ".env")
 
 
 settings = get_settings()

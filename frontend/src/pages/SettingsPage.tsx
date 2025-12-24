@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getBatchStatus, updateBatchSchedule, startBatch, stopBatch } from '../api/batch';
+import { getBatchStatus, updateBatchSchedule, startBatch, stopBatch, runBatch } from '../api/batch';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -43,6 +43,14 @@ export default function SettingsPage() {
     },
   });
 
+  // 즉시 실행
+  const runMutation = useMutation({
+    mutationFn: runBatch,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['batchStatus'] });
+    },
+  });
+
   const handleAddTime = () => {
     if (newTime && !times.includes(newTime)) {
       const updated = [...times, newTime].sort();
@@ -59,13 +67,16 @@ export default function SettingsPage() {
   };
 
   const handleToggle = () => {
-      console.log("batchStatus  : ", batchStatus)
     if (batchStatus?.isActive) {
-        console.log("음 이상하다? 왜 안들어오지")
       stopMutation.mutate();
     } else {
-        console.log("you need to be in here")
       startMutation.mutate();
+    }
+  };
+
+  const handleRunNow = () => {
+    if (confirm('지금 배치를 실행하시겠습니까? (약 2-3분 소요)')) {
+      runMutation.mutate();
     }
   };
 
@@ -144,6 +155,29 @@ export default function SettingsPage() {
               추가
             </button>
           </div>
+        </div>
+
+        {/* 수동 실행 */}
+        <div className="pt-4 border-t border-gray-200">
+          <p className="font-medium text-gray-900 mb-3">수동 실행</p>
+          <button
+            onClick={handleRunNow}
+            disabled={runMutation.isPending}
+            className="w-full py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {runMutation.isPending ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                실행 중...
+              </>
+            ) : (
+              <>🚀 지금 실행</>
+            )}
+          </button>
+          <p className="text-sm text-gray-500 mt-2">즉시 이슈를 수집합니다. (약 2-3분 소요)</p>
         </div>
 
         {/* 상태 정보 */}

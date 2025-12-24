@@ -1,4 +1,4 @@
-# app/common/schema.py
+# app/common/schemas.py
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 

@@ -113,6 +113,71 @@ class YouTubeProvider(TrendProvider):
         print(f"YouTube 트렌드 실패: 최대 재시도 횟수 초과 ({max_retries}회)")
         return []
 
+    async def search_videos(
+            self,
+            query: str,
+            max_results: int = 5,
+            max_retries: int = 3
+    ) -> list[TrendItem]:
+        """키워드로 영상 검색"""
+
+        for attempt in range(max_retries):
+            try:
+                request = self.youtube.search().list(
+                    part="snippet",
+                    q=query,
+                    type="video",
+                    order="viewCount",
+                    regionCode="KR",
+                    maxResults=min(max_results, 50)
+                )
+                response = request.execute()
+
+                items = response.get("items", [])
+                if not items:
+                    return []
+
+                video_ids = [item["id"]["videoId"] for item in items]
+                stats = self._get_video_stats(video_ids)
+
+                return [
+                    TrendItem(
+                        title=item["snippet"]["title"],
+                        url=f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                        channel_name=item["snippet"]["channelTitle"],
+                        channel_id=item["snippet"]["channelId"],
+                        video_id=item["id"]["videoId"],
+                        view_count=stats.get(item["id"]["videoId"], {}).get("view_count", 0),
+                        like_count=stats.get(item["id"]["videoId"], {}).get("like_count", 0),
+                        comment_count=stats.get(item["id"]["videoId"], {}).get("comment_count", 0),
+                        published_at=item["snippet"]["publishedAt"],
+                        thumbnail_url=item["snippet"]["thumbnails"].get("high", {}).get("url", ""),
+                        description=item["snippet"].get("description", ""),
+                        tags=[]
+                    )
+                    for item in items
+                ]
+
+            except HttpError as e:
+                error_msg = str(e).lower()
+
+                if "quotaexceeded" in error_msg:
+                    raise YouTubeAPIError("API quota exceeded")
+
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                return []
+
+            except Exception as e:
+                print(f"YouTube 검색 에러: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                return []
+
+        return []
+
     def _get_video_details(self, video_ids: list[str]) -> dict:
         """영상 상세 정보 (태그 등) 가져오기"""
         try:
@@ -132,6 +197,27 @@ class YouTubeProvider(TrendProvider):
             print(f"영상 상세 정보 가져오기 실패: {e}")
             return {}
 
+    def _get_video_stats(self, video_ids: list[str]) -> dict:
+        """영상 통계 정보 가져오기"""
+        try:
+            request = self.youtube.videos().list(
+                part="statistics",
+                id=",".join(video_ids)
+            )
+            response = request.execute()
+
+            return {
+                item["id"]: {
+                    "view_count": int(item["statistics"].get("viewCount", 0)),
+                    "like_count": int(item["statistics"].get("likeCount", 0)),
+                    "comment_count": int(item["statistics"].get("commentCount", 0))
+                }
+                for item in response.get("items", [])
+            }
+        except Exception as e:
+            print(f"통계 정보 가져오기 실패: {e}")
+            return {}
+
     async def get_top_comments(
             self,
             video_id: str,
@@ -145,7 +231,7 @@ class YouTubeProvider(TrendProvider):
                 request = self.youtube.commentThreads().list(
                     part="snippet",
                     videoId=video_id,
-                    order="relevance",  # 관련성 순 (좋아요 많은 것 우선)
+                    order="relevance",
                     maxResults=min(max_results, 100)
                 )
                 response = request.execute()
@@ -165,7 +251,6 @@ class YouTubeProvider(TrendProvider):
                         published_at=snippet["publishedAt"]
                     ))
 
-                # 좋아요 순 정렬 (API가 완벽하게 정렬 안 해줄 수 있어서)
                 comments.sort(key=lambda x: x["like_count"], reverse=True)
 
                 return comments[:max_results]
@@ -173,7 +258,6 @@ class YouTubeProvider(TrendProvider):
             except HttpError as e:
                 error_msg = str(e).lower()
 
-                # 댓글 비활성화된 영상
                 if "commentsdisabled" in error_msg or "403" in str(e.resp.status):
                     print(f"댓글 비활성화: {video_id}")
                     return []

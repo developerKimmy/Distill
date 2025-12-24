@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import String, Text, Integer, Float, Date, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.core.base import Base, UUIDMixin, TimestampMixin
 
@@ -50,8 +51,10 @@ class IssueDailySnapshot(Base, UUIDMixin):
     issue = relationship("Issue", back_populates="snapshots")
     batch_run = relationship("BatchRun", back_populates="issue_snapshots")
     articles = relationship("IssueArticle", back_populates="snapshot", cascade="all, delete-orphan")
-    videos = relationship("IssueVideo", back_populates="snapshot", cascade="all, delete-orphan")
+    keywords = relationship("IssueKeyword", back_populates="snapshot", cascade="all, delete-orphan")
     insights = relationship("IssueInsight", back_populates="snapshot", cascade="all, delete-orphan")
+    embeddings = relationship("IssueEmbedding", back_populates="snapshot", cascade="all, delete-orphan")
+    contents = relationship("IssueContent", back_populates="snapshot", cascade="all, delete-orphan")
 
 
 class IssueArticle(Base, UUIDMixin):
@@ -76,3 +79,68 @@ class IssueArticle(Base, UUIDMixin):
 
     # Relationships
     snapshot = relationship("IssueDailySnapshot", back_populates="articles")
+
+
+class IssueKeyword(Base, UUIDMixin):
+    """이슈 키워드"""
+    __tablename__ = "issue_keywords"
+
+    snapshot_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issue_daily_snapshots.id"),
+        nullable=False
+    )
+    keyword: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    snapshot = relationship("IssueDailySnapshot", back_populates="keywords")
+
+
+class IssueEmbedding(Base, UUIDMixin):
+    """이슈 임베딩 (RAG용)"""
+    __tablename__ = "issue_embeddings"
+
+    snapshot_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issue_daily_snapshots.id"),
+        nullable=False
+    )
+    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding = mapped_column(Vector(384), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    snapshot = relationship("IssueDailySnapshot", back_populates="embeddings")
+
+
+class IssueContent(Base, UUIDMixin):
+    """생성된 콘텐츠"""
+    __tablename__ = "issue_contents"
+
+    snapshot_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issue_daily_snapshots.id"),
+        nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    verified: Mapped[bool] = mapped_column(default=False, nullable=False)
+    confidence_score: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    snapshot = relationship("IssueDailySnapshot", back_populates="contents")

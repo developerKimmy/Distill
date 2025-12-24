@@ -5,7 +5,6 @@ from typing import Generator, AsyncGenerator
 
 from app.core.config import settings
 
-# 동기 (기존 코드 호환)
 SYNC_DATABASE_URL = settings.DATABASE_URL.replace("+asyncpg", "")
 engine = create_engine(SYNC_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

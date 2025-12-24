@@ -11,13 +11,19 @@ from pathlib import Path
 # backend 경로 추가
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+import pgvector.sqlalchemy
+
 from app.core.base import Base
 from app.auth.models import User
 from app.workspace.models import Workspace
 from app.batch.models import BatchRun
-from app.issues.models import Issue, IssueDailySnapshot, IssueArticle
+from app.issues.models import (
+    Issue, IssueDailySnapshot, IssueArticle,
+    IssueKeyword, IssueEmbedding, IssueContent
+)
 from app.videos.models import IssueVideo, IssueComment
 from app.insights.models import IssueInsight
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

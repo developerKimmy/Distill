@@ -1,7 +1,8 @@
-import os
 import requests
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
+
+from app.core.config import settings
 
 
 @dataclass
@@ -21,8 +22,8 @@ class NaverNewsProvider:
     SEARCH_API_URL = "https://openapi.naver.com/v1/search/news.json"
 
     def __init__(self):
-        self.client_id = os.getenv("NAVER_CLIENT_ID")
-        self.client_secret = os.getenv("NAVER_CLIENT_SECRET")
+        self.client_id = settings.NAVER_CLIENT_ID
+        self.client_secret = settings.NAVER_CLIENT_SECRET
         self.headers = {"User-Agent": "Mozilla/5.0"}
 
     def get_ranking_news(self) -> list[NewsItem]:
@@ -50,8 +51,14 @@ class NaverNewsProvider:
 
         return news_list
 
-    def search_news(self, query: str, display: int = 3) -> list[NewsItem]:
-        """네이버 검색 API로 뉴스 검색"""
+    def search_news(self, query: str, display: int = 3, sort: str = "date") -> list[NewsItem]:
+        """네이버 검색 API로 뉴스 검색
+
+        Args:
+            query: 검색어
+            display: 결과 개수 (기본 3개)
+            sort: 정렬 방식 - "date" (최신순) 또는 "sim" (관련도순)
+        """
         if not self.client_id or not self.client_secret:
             raise ValueError("NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 환경변수 필요")
 
@@ -62,7 +69,7 @@ class NaverNewsProvider:
         params = {
             "query": query,
             "display": display,
-            "sort": "sim"
+            "sort": sort
         }
 
         response = requests.get(self.SEARCH_API_URL, headers=headers, params=params)

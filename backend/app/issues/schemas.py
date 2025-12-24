@@ -1,4 +1,4 @@
-# app/issues/schema.py
+# app/issues/schemas.py
 from datetime import datetime, date
 
 from app.common.schema import BaseSchema

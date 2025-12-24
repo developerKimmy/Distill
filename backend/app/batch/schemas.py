@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.common.schema import BaseSchema
 
@@ -8,9 +8,24 @@ class BatchSchedule(BaseSchema):
     """배치 스케줄 설정"""
     times: list[str] = Field(
         default=["09:00", "18:00"],
-        description="실행 시간 목록 (HH:MM 형식)"
+        description="실행 시간 목록 (HH:00 또는 HH:30 형식)"
     )
     timezone: str = Field(default="Asia/Seoul")
+
+    @field_validator("times")
+    @classmethod
+    def validate_times(cls, v: list[str]) -> list[str]:
+        for time in v:
+            if len(time) != 5 or time[2] != ":":
+                raise ValueError(f"Invalid time format: {time}. Use HH:MM")
+
+            hour, minute = time.split(":")
+            if not (0 <= int(hour) <= 23):
+                raise ValueError(f"Invalid hour: {hour}")
+            if minute not in ("00", "30"):
+                raise ValueError(f"Minutes must be 00 or 30, got: {minute}")
+
+        return v
 
 
 class BatchStartRequest(BaseSchema):
@@ -40,3 +55,9 @@ class BatchRunResponse(BaseSchema):
     started_at: datetime
     completed_at: datetime | None
     error_message: str | None
+
+
+class BatchTaskResponse(BaseSchema):
+    """배치 태스크 시작 응답"""
+    task_id: str
+    status: str = "queued"
