@@ -34,6 +34,7 @@ tiktoken>=0.5.0
 # Web Scraping
 httpx==0.26.0
 beautifulsoup4==4.12.3
+requests>=2.31.0
 
 # Search
 duckduckgo-search>=4.0.0
