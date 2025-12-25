@@ -45,19 +45,19 @@ export interface IssueDetail extends Issue {
   })[];
 }
 
-// 배치 스케줄
-export interface BatchSchedule {
-  times: string[];
-  timezone?: string;
+// 글로벌 배치 상태
+export interface GlobalBatchStatus {
+  schedule: string[];  // 서버 배치 시간 ["06:00", "12:00", "18:00"]
+  lastRunAt: string | null;
+  totalRuns: number;
+  lastIssuesCreated: number;
 }
 
-// 수정 (camelCase) - 백엔드 응답이랑 일치
-export interface BatchStatus {
-  isActive: boolean;
-  schedule: BatchSchedule | null;
-  lastRunAt: string | null;
-  nextRunAt: string | null;
-  totalRuns: number;
+// 알림 설정
+export interface NotificationSettings {
+  enabled: boolean;
+  times: string[];
+  timezone: string;
 }
 
 // API 응답

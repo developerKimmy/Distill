@@ -18,8 +18,25 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    "check-scheduled-batches": {
-        "task": "app.tasks.batch.check_and_run_scheduled",
+    # 글로벌 배치 실행 (하루 3회: 06:00, 12:00, 18:00)
+    "run-global-batch-morning": {
+        "task": "app.tasks.batch.run_global_batch",
+        "schedule": crontab(hour=6, minute=0),
+        "args": ("scheduled",)
+    },
+    "run-global-batch-noon": {
+        "task": "app.tasks.batch.run_global_batch",
+        "schedule": crontab(hour=12, minute=0),
+        "args": ("scheduled",)
+    },
+    "run-global-batch-evening": {
+        "task": "app.tasks.batch.run_global_batch",
+        "schedule": crontab(hour=18, minute=0),
+        "args": ("scheduled",)
+    },
+    # 이메일 알림 체크 (매 30분)
+    "send-scheduled-notifications": {
+        "task": "app.tasks.batch.send_scheduled_notifications",
         "schedule": crontab(minute="0,30"),
     },
 }

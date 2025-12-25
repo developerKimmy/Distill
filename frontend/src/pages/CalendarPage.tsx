@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Calendar, dateFnsLocalizer, type View } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { getBatchStatus, startBatch } from '../api/batch';
+import { getGlobalBatchStatus } from '../api/batch';
 import { getIssues } from '../api/issues';
 
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -35,10 +35,10 @@ interface CalendarEvent {
 export default function CalendarPage() {
   const navigate = useNavigate();
 
-  // 배치 상태
+  // 글로벌 배치 상태
   const { data: batchStatus } = useQuery({
-    queryKey: ['batchStatus'],
-    queryFn: getBatchStatus,
+    queryKey: ['globalBatchStatus'],
+    queryFn: getGlobalBatchStatus,
   });
 
   // 이슈 목록 (전체)
@@ -46,16 +46,6 @@ export default function CalendarPage() {
     queryKey: ['issues'],
     queryFn: () => getIssues(1, 100),
   });
-
-  // 배치 수동 실행
-  const handleStartBatch = async () => {
-    try {
-      await startBatch();
-      alert('배치가 시작되었습니다.');
-    } catch {
-      alert('배치 실행에 실패했습니다.');
-    }
-  };
 
   // 이슈를 캘린더 이벤트로 변환
   const events: CalendarEvent[] = useMemo(() => {
@@ -128,19 +118,19 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-6">
-      {/* 배치 상태 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-600">
-            마지막 실행: {batchStatus?.lastRunAt || '없음'}
-          </p>
+      {/* 배치 상태 (read-only) */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center justify-between text-sm text-gray-600">
+          <span>
+            마지막 수집:{' '}
+            {batchStatus?.lastRunAt
+              ? new Date(batchStatus.lastRunAt).toLocaleString('ko-KR')
+              : '없음'}
+          </span>
+          <span>
+            다음 수집: {batchStatus?.schedule.join(', ')}
+          </span>
         </div>
-        <button
-          onClick={handleStartBatch}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-        >
-          배치 실행
-        </button>
       </div>
 
       {/* 캘린더 */}

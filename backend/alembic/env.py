@@ -14,20 +14,31 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 import pgvector.sqlalchemy
 
 from app.core.base import Base
+from app.core.config import settings
 from app.auth.models import User
-from app.workspace.models import Workspace
+from app.settings.models import UserSettings
 from app.batch.models import BatchRun
 from app.issues.models import (
     Issue, IssueDailySnapshot, IssueArticle,
     IssueKeyword, IssueEmbedding, IssueContent
 )
-from app.videos.models import IssueVideo, IssueComment
 from app.insights.models import IssueInsight
 
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# .env에서 DATABASE_URL 가져오기 (sync 드라이버로 변환)
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+db_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
+# asyncpg 제거하고 psycopg2 사용
+db_url = db_url.replace("+asyncpg", "")
+db_url = db_url.replace("postgres://", "postgresql://")
+config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

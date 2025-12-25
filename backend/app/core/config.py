@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
+    # Global Batch Schedule (하루 3회)
+    BATCH_SCHEDULE: str = "06:00,12:00,18:00"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

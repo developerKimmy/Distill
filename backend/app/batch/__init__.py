@@ -1,21 +1,15 @@
 from app.batch.models import BatchRun
 from app.batch.schemas import (
-    BatchSchedule,
-    BatchStartRequest,
-    BatchScheduleUpdateRequest,
-    BatchStatusResponse,
-    BatchRunResponse,
+    GlobalBatchStatusResponse,
+    BatchTaskResponse,
 )
-from app.batch.service import BatchService
+from app.batch.service import GlobalBatchService
 from app.batch.router import router
 
 __all__ = [
     "BatchRun",
-    "BatchSchedule",
-    "BatchStartRequest",
-    "BatchScheduleUpdateRequest",
-    "BatchStatusResponse",
-    "BatchRunResponse",
-    "BatchService",
+    "GlobalBatchStatusResponse",
+    "BatchTaskResponse",
+    "GlobalBatchService",
     "router",
 ]

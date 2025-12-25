@@ -5,7 +5,7 @@ from app.core.config import settings
 
 # 모델 import (relationship 등록용)
 from app.auth.models import User
-from app.workspace.models import Workspace
+from app.settings.models import UserSettings
 from app.batch.models import BatchRun
 from app.issues.models import Issue, IssueDailySnapshot, IssueArticle
 from app.insights.models import IssueInsight
@@ -13,6 +13,7 @@ from app.insights.models import IssueInsight
 from app.auth.router import router as auth_router
 from app.issues.router import router as issues_router, report_router
 from app.batch.router import router as batch_router
+from app.settings.router import router as settings_router
 from app.content import router as content_router
 
 app = FastAPI(
@@ -35,6 +36,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(issues_router, prefix="/api")
 app.include_router(report_router, prefix="/api")
 app.include_router(batch_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
 
 @app.get("/health", tags=["health"])
