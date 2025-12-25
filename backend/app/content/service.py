@@ -143,6 +143,7 @@ class ContentService:
             content=content_text
         )
         self.db.add(issue_content)
+        await self.db.flush()  # Flush to get the ID for verify_content
 
         print(f"[CONTENT] generate_content completed in {time.time() - start:.2f}s")
         return issue_content
