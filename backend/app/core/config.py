@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     GMAIL_USER: str = ""
     GMAIL_APP_PASSWORD: str = ""
 
-    # CORS
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    # CORS (쉼표로 구분, 배포 시 .env에서 설정)
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://kimmykim.dev"
 
     # Global Batch Schedule (하루 3회)
     BATCH_SCHEDULE: str = "06:00,12:00,18:00"

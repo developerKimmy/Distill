@@ -23,9 +23,19 @@ app = FastAPI(
 )
 
 # CORS 설정
+origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
+# 와일드카드 패턴 확인 (*.onrender.com 등)
+origin_regex = None
+if any("*" in o for o in origins):
+    # https://*.onrender.com -> https://.*\.onrender\.com
+    patterns = [o.replace(".", r"\.").replace("*", ".*") for o in origins if "*" in o]
+    origin_regex = f"({'|'.join(patterns)})"
+    origins = [o for o in origins if "*" not in o]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS.split(","),
+    allow_origins=origins if origins else ["*"],
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
