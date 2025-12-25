@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Global Batch Schedule (하루 3회)
     BATCH_SCHEDULE: str = "06:00,12:00,18:00"
 
+    # Cron Secret (Render Cron 요청 검증용, 선택)
+    CRON_SECRET: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
