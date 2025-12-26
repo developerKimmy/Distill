@@ -8,6 +8,7 @@ import { getGlobalBatchStatus } from '../api/batch';
 import { getIssues } from '../api/issues';
 
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import './CalendarPage.css';
 
 // date-fns 로컬라이저 설정
 const locales = { ko };
@@ -140,7 +141,7 @@ export default function CalendarPage() {
           events={events}
           startAccessor="start"
           endAccessor="end"
-          style={{ height: 600 }}
+          style={{ height: 'auto', minHeight: 600 }}
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
           selectable
@@ -152,6 +153,7 @@ export default function CalendarPage() {
             monthHeaderFormat: (date: Date) => format(date, 'yyyy년 M월', { locale: ko }),
             weekdayFormat: (date: Date) => format(date, 'EEE', { locale: ko }),
           }}
+          showAllEvents
         />
       </div>
 

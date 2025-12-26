@@ -372,12 +372,21 @@ class IssueService:
         except Exception as e:
             print(f"임베딩 생성 에러 (이슈: {issue_name}): {e}")
 
-    async def list_issues(self, page: int = 1, size: int = 20) -> tuple[list[Issue], int]:
-        """이슈 목록 조회"""
+    async def list_issues(
+        self,
+        page: int = 1,
+        size: int = 20,
+        categories: list[str] | None = None
+    ) -> tuple[list[Issue], int]:
+        """이슈 목록 조회 (카테고리 필터링 지원)"""
         from app.issues.models import IssueContent
         offset = (page - 1) * size
 
-        result = await self.db.execute(select(func.count(Issue.id)))
+        # 카테고리 필터 적용
+        count_stmt = select(func.count(Issue.id))
+        if categories:
+            count_stmt = count_stmt.where(Issue.category.in_(categories))
+        result = await self.db.execute(count_stmt)
         total = result.scalar()
 
         stmt = (
@@ -385,10 +394,11 @@ class IssueService:
             .options(
                 selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.contents)
             )
-            .order_by(Issue.last_seen_at.desc())
-            .offset(offset)
-            .limit(size)
         )
+        if categories:
+            stmt = stmt.where(Issue.category.in_(categories))
+        stmt = stmt.order_by(Issue.last_seen_at.desc()).offset(offset).limit(size)
+
         result = await self.db.execute(stmt)
         issues = list(result.scalars().all())
 
@@ -409,10 +419,15 @@ class IssueService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_daily_report(self, report_date: date) -> list[IssueDailySnapshot]:
-        """일간 리포트 조회"""
+    async def get_daily_report(
+        self,
+        report_date: date,
+        categories: list[str] | None = None
+    ) -> list[IssueDailySnapshot]:
+        """일간 리포트 조회 (카테고리 필터링 지원)"""
         stmt = (
             select(IssueDailySnapshot)
+            .join(Issue)
             .options(
                 selectinload(IssueDailySnapshot.issue),
                 selectinload(IssueDailySnapshot.articles),
@@ -421,21 +436,28 @@ class IssueService:
                 selectinload(IssueDailySnapshot.contents)
             )
             .where(IssueDailySnapshot.date == report_date)
-            .order_by(IssueDailySnapshot.article_count.desc())
         )
+        if categories:
+            stmt = stmt.where(Issue.category.in_(categories))
+        stmt = stmt.order_by(IssueDailySnapshot.article_count.desc())
+
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_batch_dates(self, year: int, month: int) -> list[date]:
-        """배치 실행된 날짜 목록"""
-        stmt = (
-            select(IssueDailySnapshot.date)
-            .where(
-                func.extract('year', IssueDailySnapshot.date) == year,
-                func.extract('month', IssueDailySnapshot.date) == month
-            )
-            .distinct()
-            .order_by(IssueDailySnapshot.date)
+    async def get_batch_dates(
+        self,
+        year: int,
+        month: int,
+        categories: list[str] | None = None
+    ) -> list[date]:
+        """배치 실행된 날짜 목록 (카테고리 필터링 지원)"""
+        stmt = select(IssueDailySnapshot.date).where(
+            func.extract('year', IssueDailySnapshot.date) == year,
+            func.extract('month', IssueDailySnapshot.date) == month
         )
+        if categories:
+            stmt = stmt.join(Issue).where(Issue.category.in_(categories))
+        stmt = stmt.distinct().order_by(IssueDailySnapshot.date)
+
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

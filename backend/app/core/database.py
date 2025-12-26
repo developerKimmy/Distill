@@ -37,7 +37,11 @@ def get_database_urls():
 SYNC_DATABASE_URL, ASYNC_DATABASE_URL, NEEDS_SSL = get_database_urls()
 
 # 동기 엔진 (psycopg2)
-engine = create_engine(SYNC_DATABASE_URL)
+engine = create_engine(
+    SYNC_DATABASE_URL,
+    pool_pre_ping=True,  # 커넥션 사용 전 유효성 체크
+    pool_recycle=300,    # 5분마다 커넥션 재생성
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

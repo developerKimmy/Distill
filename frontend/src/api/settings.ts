@@ -9,7 +9,7 @@ export const getNotificationSettings = async (): Promise<NotificationSettings> =
 
 // 알림 설정 수정
 export const updateNotificationSettings = async (
-  settings: { enabled?: boolean; times?: string[] }
+  settings: { enabled?: boolean; times?: string[]; categories?: string[] }
 ): Promise<NotificationSettings> => {
   const { data } = await client.put('/settings/notifications', settings);
   return data;

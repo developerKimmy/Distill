@@ -16,19 +16,35 @@ from app.issues.schemas import (
     DailySnapshotWithIssue,
     IssueResponse,
 )
+from app.auth.models import User
+from app.auth.router import current_active_user
+from app.settings.service import UserSettingsService
 
 router = APIRouter(prefix="/issues", tags=["issues"])
+
+
+async def get_user_categories(
+    db: AsyncSession,
+    user: User
+) -> list[str] | None:
+    """유저의 카테고리 설정 조회 (빈 리스트면 None 반환)"""
+    settings_service = UserSettingsService(db)
+    settings = await settings_service.get_notification_settings(user.id)
+    categories = settings.get("categories", [])
+    return categories if categories else None
 
 
 @router.get("", response_model=IssueListResponse)
 async def list_issues(
         page: int = Query(1, ge=1),
         size: int = Query(20, ge=1, le=100),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
 ):
-    """이슈 목록 조회"""
+    """이슈 목록 조회 (유저 관심사 필터링)"""
+    categories = await get_user_categories(db, user)
     service = IssueService(db)
-    issues, total = await service.list_issues(page=page, size=size)
+    issues, total = await service.list_issues(page=page, size=size, categories=categories)
 
     items = []
     for issue in issues:
@@ -124,22 +140,26 @@ report_router = APIRouter(prefix="/reports", tags=["reports"])
 async def get_batch_dates(
         year: int = Query(...),
         month: int = Query(..., ge=1, le=12),
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
 ) -> list[str]:
-    """배치 실행된 날짜 목록"""
+    """배치 실행된 날짜 목록 (유저 관심사 필터링)"""
+    categories = await get_user_categories(db, user)
     service = IssueService(db)
-    dates = await service.get_batch_dates(year, month)
+    dates = await service.get_batch_dates(year, month, categories=categories)
     return [d.isoformat() for d in dates]
 
 
 @report_router.get("/{report_date}", response_model=DailyReportResponse)
 async def get_daily_report(
         report_date: date,
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
 ):
-    """일간 리포트 조회"""
+    """일간 리포트 조회 (유저 관심사 필터링)"""
+    categories = await get_user_categories(db, user)
     service = IssueService(db)
-    snapshots = await service.get_daily_report(report_date)
+    snapshots = await service.get_daily_report(report_date, categories=categories)
 
     return DailyReportResponse(
         date=report_date,
