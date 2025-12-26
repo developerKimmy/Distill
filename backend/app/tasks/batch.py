@@ -1,9 +1,12 @@
 """글로벌 배치 및 알림 태스크"""
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from app.core.celery_app import celery_app
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
 from app.core.database import AsyncSessionLocal
 from app.core.config import settings
 from app.batch.service import GlobalBatchService
@@ -47,7 +50,7 @@ def send_scheduled_notifications(self):
 async def _send_scheduled_notifications():
     """비동기 알림 발송"""
     async with AsyncSessionLocal() as db:
-        current_time = datetime.now().strftime("%H:%M")
+        current_time = datetime.now(KST).strftime("%H:%M")
 
         # 최근 완료된 배치 조회
         batch_service = GlobalBatchService(db)

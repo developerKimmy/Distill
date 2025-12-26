@@ -79,7 +79,7 @@ export default function ReportPage() {
               <Link
                 key={snapshot.id}
                 to={`/issues/${snapshot.issue.id}`}
-                className="block bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 transition-colors"
+                className="block bg-white rounded-lg border border-gray-200 p-4 hover:border-amber-300 transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -93,7 +93,7 @@ export default function ReportPage() {
                     )}
                   </div>
                   <div className="ml-4 text-right">
-                    <p className="text-sm font-medium text-blue-600">
+                    <p className="text-sm font-medium text-amber-600">
                       기사 {snapshot.articleCount}개
                     </p>
                     {snapshot.issue.totalSnapshots > 1 && (

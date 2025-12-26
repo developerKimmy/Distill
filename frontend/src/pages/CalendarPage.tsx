@@ -168,7 +168,7 @@ export default function CalendarPage() {
           <span className="w-3 h-3 bg-emerald-500 rounded"></span> 사회
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 bg-blue-500 rounded"></span> IT
+          <span className="w-3 h-3 bg-sky-500 rounded"></span> IT
         </span>
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 bg-violet-500 rounded"></span> 문화

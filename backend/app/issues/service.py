@@ -1,9 +1,12 @@
 import time
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 from app.issues.models import (
     Issue, IssueDailySnapshot, IssueArticle, IssueKeyword, IssueEmbedding
@@ -45,7 +48,7 @@ class IssueService:
         7.5. 후속 검색 (진행형 이슈)
         8. 콘텐츠 생성 + 팩트체크
         """
-        today = date.today()
+        today = datetime.now(KST).date()  # 한국 시간 기준
         total_start = time.time()
         pipeline_result = PipelineResult()
         self.deduplicator.reset()  # 중복 제거기 초기화
@@ -371,6 +374,7 @@ class IssueService:
 
     async def list_issues(self, page: int = 1, size: int = 20) -> tuple[list[Issue], int]:
         """이슈 목록 조회"""
+        from app.issues.models import IssueContent
         offset = (page - 1) * size
 
         result = await self.db.execute(select(func.count(Issue.id)))
@@ -378,7 +382,9 @@ class IssueService:
 
         stmt = (
             select(Issue)
-            .options(selectinload(Issue.snapshots))
+            .options(
+                selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.contents)
+            )
             .order_by(Issue.last_seen_at.desc())
             .offset(offset)
             .limit(size)

@@ -7,12 +7,12 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
     # App
-    APP_NAME: str = "Atlas"
+    APP_NAME: str = "DSTILL"
     DEBUG: bool = True
     SECRET_KEY: str = "your-secret-key-change-in-production"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://atlas:atlas_dev_password@localhost:5432/atlas_db"
+    DATABASE_URL: str = "postgresql+asyncpg://dstill:dstill_dev_password@localhost:5432/dstill_db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

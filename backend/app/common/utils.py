@@ -6,7 +6,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Callable, TypeVar, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 T = TypeVar('T')
 
@@ -167,15 +170,15 @@ class EmailService:
             return False
 
         try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
             duration_min = duration_seconds / 60
 
-            subject = f"[Atlas] 배치 완료 - {issues_count}개 이슈 수집됨"
+            subject = f"[DSTILL] 배치 완료 - {issues_count}개 이슈 수집됨"
 
             html_body = f"""
             <html>
             <body style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2>🎯 Atlas 배치 완료</h2>
+                <h2>🎯 DSTILL 배치 완료</h2>
                 <table style="border-collapse: collapse; margin: 20px 0;">
                     <tr>
                         <td style="padding: 8px; border: 1px solid #ddd;"><strong>완료 시간</strong></td>
@@ -194,7 +197,7 @@ class EmailService:
                         <td style="padding: 8px; border: 1px solid #ddd;">{duration_min:.1f}분</td>
                     </tr>
                 </table>
-                <p style="color: #666; font-size: 12px;">이 메일은 Atlas 자동 알림입니다.</p>
+                <p style="color: #666; font-size: 12px;">이 메일은 DSTILL 자동 알림입니다.</p>
             </body>
             </html>
             """

@@ -11,6 +11,7 @@ from app.issues.schemas import (
     IssueDetailResponse,
     IssueDailySnapshotDetailResponse,
     IssueArticleResponse,
+    IssueContentResponse,
     DailyReportResponse,
     DailySnapshotWithIssue,
     IssueResponse,
@@ -33,6 +34,12 @@ async def list_issues(
     for issue in issues:
         latest_snapshot = issue.snapshots[0] if issue.snapshots else None
 
+        # Check if any snapshot has content
+        has_content = any(
+            len(snapshot.contents) > 0
+            for snapshot in issue.snapshots
+        )
+
         items.append(IssueListItem(
             id=str(issue.id),
             name=issue.name,
@@ -43,6 +50,7 @@ async def list_issues(
             status=issue.status,
             latest_article_count=latest_snapshot.article_count if latest_snapshot else None,
             latest_sentiment_score=latest_snapshot.sentiment_score if latest_snapshot else None,
+            has_content=has_content,
         ))
 
     return IssueListResponse(
@@ -90,6 +98,17 @@ async def get_issue(
                         published_at=article.published_at
                     )
                     for article in snapshot.articles
+                ],
+                contents=[
+                    IssueContentResponse(
+                        id=str(content.id),
+                        title=content.title,
+                        content=content.content,
+                        verified=content.verified,
+                        confidence_score=content.confidence_score,
+                        created_at=content.created_at
+                    )
+                    for content in snapshot.contents
                 ]
             )
             for snapshot in sorted(issue.snapshots, key=lambda s: s.date, reverse=True)

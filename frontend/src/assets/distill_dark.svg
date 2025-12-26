@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 235 110">
+  <g fill="#ffffff">
+    <text x="21" y="72" font-family="Arial Black, sans-serif" font-size="48" font-weight="900">D</text>
+    <text x="56" y="72" font-family="Arial Black, sans-serif" font-size="48" font-weight="900">I</text>
+    <text x="72" y="72" font-family="Arial Black, sans-serif" font-size="48" font-weight="900">S</text>
+    <text x="106" y="72" font-family="Arial Black, sans-serif" font-size="48" font-weight="900">T</text>
+    <rect x="143" y="32" width="11" height="40" rx="0.5"/>
+    <path d="M148.5 82 C148.5 82, 141 92, 141 98 C141 102.5, 144.5 106, 148.5 106 C152.5 106, 156 102.5, 156 98 C156 92, 148.5 82, 148.5 82 Z"/>
+    <text x="155" y="72" font-family="Arial Black, sans-serif" font-size="48" font-weight="900">L</text>
+    <text x="185" y="72" font-family="Arial Black, sans-serif" font-size="48" font-weight="900">L</text>
+  </g>
+</svg>

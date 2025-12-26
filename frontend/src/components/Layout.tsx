@@ -1,4 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import logo from '../assets/distill_light.svg';
 
 export default function Layout() {
   const location = useLocation();
@@ -17,18 +18,18 @@ export default function Layout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* 헤더 */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold text-gray-900">
-            Atlas
+          <Link to="/">
+            <img src={logo} alt="DSTILL" className="h-14" />
           </Link>
           <nav className="flex items-center gap-6">
             <Link
               to="/"
               className={`text-sm ${
-                isActive('/') ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-gray-900'
+                isActive('/') ? 'text-amber-600 font-medium' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               캘린더
@@ -36,7 +37,7 @@ export default function Layout() {
             <Link
               to="/issues"
               className={`text-sm ${
-                isActive('/issues') ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-gray-900'
+                isActive('/issues') ? 'text-amber-600 font-medium' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               이슈 목록
@@ -44,7 +45,7 @@ export default function Layout() {
             <Link
               to="/settings"
               className={`text-sm ${
-                isActive('/settings') ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-gray-900'
+                isActive('/settings') ? 'text-amber-600 font-medium' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               설정

@@ -3,11 +3,11 @@ version: '3.8'
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: atlas-postgres
+    container_name: dstill-postgres
     environment:
-      POSTGRES_USER: atlas
-      POSTGRES_PASSWORD: atlas_dev_password
-      POSTGRES_DB: atlas_db
+      POSTGRES_USER: dstill
+      POSTGRES_PASSWORD: dstill_dev_password
+      POSTGRES_DB: dstill_db
     ports:
       - "5432:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: atlas-redis
+    container_name: dstill-redis
     ports:
       - "6379:6379"
     volumes:

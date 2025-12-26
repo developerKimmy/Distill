@@ -7,6 +7,7 @@ import RegisterPage from './pages/RegisterPage';
 import CalendarPage from './pages/CalendarPage';
 import ReportPage from './pages/ReportPage';
 import IssuePage from './pages/IssuePage';
+import IssueListPage from './pages/IssueListPage';
 import SettingsPage from './pages/SettingsPage';
 
 const queryClient = new QueryClient({
@@ -38,6 +39,7 @@ export default function App() {
           >
             <Route index element={<CalendarPage />} />
             <Route path="report/:date" element={<ReportPage />} />
+            <Route path="issues" element={<IssueListPage />} />
             <Route path="issues/:issueId" element={<IssuePage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

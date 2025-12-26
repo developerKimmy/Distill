@@ -87,7 +87,7 @@ export default function IssuePage() {
               <div
                 className={`w-full rounded-t transition-colors ${
                   selectedSnapshot?.id === snapshot.id
-                    ? 'bg-blue-500'
+                    ? 'bg-amber-500'
                     : 'bg-gray-300 group-hover:bg-gray-400'
                 }`}
                 style={{
@@ -108,7 +108,7 @@ export default function IssuePage() {
             <h2 className="text-lg font-semibold">
               {formatFullDate(selectedSnapshot.date)}
             </h2>
-            <span className="text-sm text-blue-600 font-medium">
+            <span className="text-sm text-amber-600 font-medium">
               기사 {selectedSnapshot.articleCount}개
             </span>
           </div>
@@ -136,9 +136,39 @@ export default function IssuePage() {
             </div>
           )}
 
+          {/* 생성된 콘텐츠 */}
+          {selectedSnapshot.contents && selectedSnapshot.contents.length > 0 && (
+            <div className="space-y-4 mb-6">
+              <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                📝 생성된 콘텐츠
+                {selectedSnapshot.contents[0].verified && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                    검증됨
+                  </span>
+                )}
+              </h3>
+              {selectedSnapshot.contents.map((content) => (
+                <div
+                  key={content.id}
+                  className="p-4 bg-amber-50 border border-amber-200 rounded-lg"
+                >
+                  <h4 className="font-semibold text-gray-900 mb-2">
+                    {content.title}
+                  </h4>
+                  <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+                    {content.content}
+                  </div>
+                  <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                    <span>신뢰도: {Math.round(content.confidenceScore * 100)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 기사 목록 */}
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-gray-700">관련 기사</h3>
+            <h3 className="text-sm font-medium text-gray-700">📰 관련 기사</h3>
             {selectedSnapshot.articles.map((article) => (
               <a
                 key={article.id}

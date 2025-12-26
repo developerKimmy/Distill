@@ -7,6 +7,9 @@ export interface Issue {
   lastSeenAt: string;
   totalSnapshots: number;
   status: string;
+  latestArticleCount?: number | null;
+  latestSentimentScore?: number | null;
+  hasContent?: boolean;
 }
 
 // 일간 스냅샷
@@ -29,6 +32,16 @@ export interface IssueArticle {
   publishedAt: string | null;
 }
 
+// 생성된 콘텐츠
+export interface IssueContent {
+  id: string;
+  title: string;
+  content: string;
+  verified: boolean;
+  confidenceScore: number;
+  createdAt: string;
+}
+
 // 일간 리포트 (스냅샷 + 기사 포함)
 export interface DailyReport {
   date: string;
@@ -42,6 +55,7 @@ export interface DailyReport {
 export interface IssueDetail extends Issue {
   snapshots: (IssueDailySnapshot & {
     articles: IssueArticle[];
+    contents: IssueContent[];
   })[];
 }
 

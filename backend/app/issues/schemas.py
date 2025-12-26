@@ -14,6 +14,16 @@ class IssueArticleResponse(BaseSchema):
     published_at: datetime | None
 
 
+# 생성된 콘텐츠
+class IssueContentResponse(BaseSchema):
+    id: str
+    title: str
+    content: str
+    verified: bool
+    confidence_score: float
+    created_at: datetime
+
+
 # 일간 스냅샷
 class IssueDailySnapshotResponse(BaseSchema):
     id: str
@@ -26,6 +36,7 @@ class IssueDailySnapshotResponse(BaseSchema):
 # 스냅샷 + 기사 포함
 class IssueDailySnapshotDetailResponse(IssueDailySnapshotResponse):
     articles: list[IssueArticleResponse]
+    contents: list[IssueContentResponse] = []
 
 
 # 이슈 기본 정보
@@ -43,6 +54,7 @@ class IssueResponse(BaseSchema):
 class IssueListItem(IssueResponse):
     latest_article_count: int | None = None
     latest_sentiment_score: float | None = None
+    has_content: bool = False
 
 
 # 이슈 목록 응답

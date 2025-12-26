@@ -81,7 +81,7 @@ export default function SettingsPage() {
           {batchStatus?.schedule.map((time) => (
             <span
               key={time}
-              className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+              className="inline-flex items-center px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm font-medium"
             >
               {time}
             </span>
@@ -117,7 +117,7 @@ export default function SettingsPage() {
             onClick={handleToggle}
             disabled={updateMutation.isPending}
             className={`relative w-14 h-8 rounded-full transition-colors ${
-              enabled ? 'bg-blue-600' : 'bg-gray-300'
+              enabled ? 'bg-amber-600' : 'bg-gray-300'
             }`}
           >
             <span
@@ -161,12 +161,12 @@ export default function SettingsPage() {
                 type="time"
                 value={newTime}
                 onChange={(e) => setNewTime(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
               <button
                 onClick={handleAddTime}
                 disabled={!newTime || updateMutation.isPending}
-                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50"
               >
                 추가
               </button>

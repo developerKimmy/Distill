@@ -294,8 +294,9 @@ class ContentService:
         needs_text = "\n".join([f"- {n}" for n in needs]) if needs else "없음"
         directions_text = "\n".join([f"- {d}" for d in content_directions]) if content_directions else "없음"
 
-        from datetime import date
-        today_str = date.today().strftime("%Y년 %m월 %d일")
+        from datetime import datetime, timezone, timedelta
+        KST = timezone(timedelta(hours=9))
+        today_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
 
         prompt = f"""이슈: {issue_name}
 기준일자: {today_str}
