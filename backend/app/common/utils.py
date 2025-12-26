@@ -224,7 +224,9 @@ class EmailService:
         self,
         recipient: str,
         issues: list[dict],
-        categories: list[str] | None = None
+        categories: list[str] | None = None,
+        magic_link_url: str | None = None,
+        batch_time: datetime | None = None
     ) -> bool:
         """이슈 다이제스트 이메일 발송
 
@@ -232,6 +234,8 @@ class EmailService:
             recipient: 수신자 이메일
             issues: 이슈 목록 [{name, category, summary, article_count}, ...]
             categories: 사용자가 선택한 카테고리 (없으면 전체)
+            magic_link_url: 자동 로그인 매직 링크 URL
+            batch_time: 배치 실행 시간 (없으면 현재 시간)
         """
         if not self.gmail_user or not self.gmail_app_password:
             print("[EMAIL] Gmail 설정 없음, 이메일 발송 스킵")
@@ -242,10 +246,16 @@ class EmailService:
             return False
 
         try:
-            now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-            category_text = ", ".join(categories) if categories else "전체"
+            # 배치 시간 기준 (없으면 현재 시간)
+            reference_time = batch_time or datetime.now(KST)
+            if reference_time.tzinfo is None:
+                reference_time = reference_time.replace(tzinfo=KST)
+            time_str = reference_time.strftime("%Y-%m-%d %H:%M")
 
-            subject = f"[DSTILL] 오늘의 이슈 {len(issues)}개 - {now}"
+            category_text = ", ".join(categories) if categories else "전체"
+            link_url = magic_link_url or "https://kimmykim.dev"
+
+            subject = f"[DSTILL] 오늘의 이슈 {len(issues)}개 - {time_str}"
 
             # 이슈 목록 HTML 생성
             issues_html = ""
@@ -269,7 +279,7 @@ class EmailService:
                 <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                     <h2 style="color: #1b1b32; margin-bottom: 8px;">📰 오늘의 이슈</h2>
                     <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
-                        {now} 기준 | 카테고리: {category_text}
+                        {time_str} 기준 | 카테고리: {category_text}
                     </p>
 
                     <table style="width: 100%; border-collapse: collapse;">
@@ -277,9 +287,12 @@ class EmailService:
                     </table>
 
                     <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
-                        <a href="https://dstill.example.com" style="display: inline-block; background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+                        <a href="{link_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
                             DSTILL에서 자세히 보기
                         </a>
+                        <p style="color: #9ca3af; font-size: 11px; margin-top: 8px;">
+                            이 링크는 10분간 유효합니다.
+                        </p>
                     </div>
 
                     <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">

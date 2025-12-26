@@ -17,6 +17,7 @@ from app.settings.models import UserSettings
 from app.auth.models import User
 from app.issues.models import Issue, IssueDailySnapshot
 from app.common.utils import EmailService
+from app.auth.magic_link import get_magic_link_url
 
 
 @celery_app.task(bind=True, name="app.tasks.batch.run_global_batch")
@@ -132,10 +133,16 @@ def _send_scheduled_notifications_sync():
                     print(f"[NOTIFICATION] Found {len(issues)} issues for {user.email}")
 
                     if issues:
+                        # 매직 링크 생성
+                        magic_url = get_magic_link_url(user.id)
+                        print(f"[NOTIFICATION] Magic link for {user.email}: {magic_url[:50]}...")
+
                         success = email_service.send_issues_digest(
                             recipient=user.email,
                             issues=issues,
-                            categories=user_categories if user_categories else None
+                            categories=user_categories if user_categories else None,
+                            magic_link_url=magic_url,
+                            batch_time=batch_run.completed_at
                         )
                         if success:
                             sent_count += 1

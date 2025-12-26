@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import MagicLinkPage from './pages/MagicLinkPage';
 import CalendarPage from './pages/CalendarPage';
 import ReportPage from './pages/ReportPage';
 import IssuePage from './pages/IssuePage';
@@ -27,6 +28,7 @@ export default function App() {
           {/* 공개 라우트 */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/auth/magic" element={<MagicLinkPage />} />
 
           {/* 인증 필요 라우트 */}
           <Route

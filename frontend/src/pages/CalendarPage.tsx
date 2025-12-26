@@ -6,7 +6,6 @@ import { format, parse, startOfWeek, getDay, isBefore, startOfDay } from 'date-f
 import { ko } from 'date-fns/locale';
 import { getGlobalBatchStatus } from '../api/batch';
 import { getIssuesForCalendar, getBatchDates } from '../api/issues';
-import { getNotificationSettings } from '../api/settings';
 
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import './CalendarPage.css';
@@ -38,12 +37,6 @@ export default function CalendarPage() {
   const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // 유저 설정 (가입 날짜 포함)
-  const { data: userSettings } = useQuery({
-    queryKey: ['notificationSettings'],
-    queryFn: getNotificationSettings,
-  });
-
   // 글로벌 배치 상태
   const { data: batchStatus } = useQuery({
     queryKey: ['globalBatchStatus'],
@@ -61,12 +54,6 @@ export default function CalendarPage() {
     queryKey: ['batchDates', currentDate.getFullYear(), currentDate.getMonth() + 1],
     queryFn: () => getBatchDates(currentDate.getFullYear(), currentDate.getMonth() + 1),
   });
-
-  // 가입 날짜
-  const signupDate = useMemo(() => {
-    if (!userSettings?.createdAt) return null;
-    return startOfDay(new Date(userSettings.createdAt));
-  }, [userSettings]);
 
   // 이슈가 있는 날짜 Set
   const activeDates = useMemo(() => {
@@ -133,17 +120,11 @@ export default function CalendarPage() {
     const dateStr = format(date, 'yyyy-MM-dd');
     const today = startOfDay(new Date());
 
-    // 가입 전 날짜인지 확인
-    const isBeforeSignup = signupDate && isBefore(startOfDay(date), signupDate);
-
-    // 이슈가 없는 날짜인지 확인 (오늘 이전 날짜만 체크)
+    // 오늘 이전 날짜 중 이슈가 없는 날짜만 비활성화
     const isPast = isBefore(startOfDay(date), today);
     const hasNoIssues = isPast && !activeDates.has(dateStr);
 
-    // 비활성화 조건
-    const isDisabled = isBeforeSignup || hasNoIssues;
-
-    if (isDisabled) {
+    if (hasNoIssues) {
       return {
         className: 'rbc-day-disabled',
         style: {
