@@ -219,3 +219,91 @@ class EmailService:
         except Exception as e:
             print(f"[EMAIL] 발송 실패: {e}")
             return False
+
+    def send_issues_digest(
+        self,
+        recipient: str,
+        issues: list[dict],
+        categories: list[str] | None = None
+    ) -> bool:
+        """이슈 다이제스트 이메일 발송
+
+        Args:
+            recipient: 수신자 이메일
+            issues: 이슈 목록 [{name, category, summary, article_count}, ...]
+            categories: 사용자가 선택한 카테고리 (없으면 전체)
+        """
+        if not self.gmail_user or not self.gmail_app_password:
+            print("[EMAIL] Gmail 설정 없음, 이메일 발송 스킵")
+            return False
+
+        if not issues:
+            print("[EMAIL] 발송할 이슈 없음")
+            return False
+
+        try:
+            now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+            category_text = ", ".join(categories) if categories else "전체"
+
+            subject = f"[DSTILL] 오늘의 이슈 {len(issues)}개 - {now}"
+
+            # 이슈 목록 HTML 생성
+            issues_html = ""
+            for issue in issues:
+                category_badge = f'<span style="background: #f3f4f6; padding: 2px 8px; border-radius: 12px; font-size: 12px; color: #6b7280;">{issue.get("category", "기타")}</span>'
+                summary = issue.get("summary", "")[:150] + "..." if issue.get("summary") and len(issue.get("summary", "")) > 150 else issue.get("summary", "-")
+
+                issues_html += f"""
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px 8px; vertical-align: top;">
+                        <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">{issue['name']}</div>
+                        <div style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">{summary}</div>
+                        <div>{category_badge} <span style="color: #9ca3af; font-size: 12px;">기사 {issue.get('article_count', 0)}개</span></div>
+                    </td>
+                </tr>
+                """
+
+            html_body = f"""
+            <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f9fafb;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <h2 style="color: #1b1b32; margin-bottom: 8px;">📰 오늘의 이슈</h2>
+                    <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+                        {now} 기준 | 카테고리: {category_text}
+                    </p>
+
+                    <table style="width: 100%; border-collapse: collapse;">
+                        {issues_html}
+                    </table>
+
+                    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
+                        <a href="https://dstill.example.com" style="display: inline-block; background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+                            DSTILL에서 자세히 보기
+                        </a>
+                    </div>
+
+                    <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">
+                        이 메일은 DSTILL 자동 알림입니다. 설정에서 알림을 변경할 수 있습니다.
+                    </p>
+                </div>
+            </body>
+            </html>
+            """
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = self.gmail_user
+            msg["To"] = recipient
+            msg.attach(MIMEText(html_body, "html"))
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.gmail_user, self.gmail_app_password)
+                server.sendmail(self.gmail_user, recipient, msg.as_string())
+
+            print(f"[EMAIL] 이슈 다이제스트 발송: {recipient} ({len(issues)}개 이슈)")
+            return True
+
+        except Exception as e:
+            print(f"[EMAIL] 발송 실패: {e}")
+            return False

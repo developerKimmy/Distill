@@ -8,6 +8,7 @@ class NotificationSettingsResponse(BaseSchema):
     enabled: bool
     times: list[str]
     timezone: str
+    categories: list[str]  # 알림 받을 카테고리 목록
 
 
 class NotificationSettingsUpdateRequest(BaseSchema):
@@ -16,6 +17,10 @@ class NotificationSettingsUpdateRequest(BaseSchema):
     times: list[str] | None = Field(
         default=None,
         description="알림 받을 시간 목록 (HH:00 또는 HH:30 형식)"
+    )
+    categories: list[str] | None = Field(
+        default=None,
+        description="알림 받을 카테고리 목록"
     )
 
     @field_validator("times")
@@ -35,3 +40,7 @@ class NotificationSettingsUpdateRequest(BaseSchema):
                 raise ValueError(f"Minutes must be 00 or 30, got: {minute}")
 
         return v
+
+
+# 사용 가능한 카테고리 목록
+AVAILABLE_CATEGORIES = ["정치", "경제", "사회", "IT", "문화"]

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
 import { getIssue } from '../api/issues';
 
 export default function IssuePage() {
@@ -147,22 +148,26 @@ export default function IssuePage() {
                   </span>
                 )}
               </h3>
-              {selectedSnapshot.contents.map((content) => (
-                <div
-                  key={content.id}
-                  className="p-4 bg-amber-50 border border-amber-200 rounded-lg"
-                >
-                  <h4 className="font-semibold text-gray-900 mb-2">
-                    {content.title}
-                  </h4>
-                  <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-                    {content.content}
+              {selectedSnapshot.contents.map((content) => {
+                // 디버깅: 콘텐츠 확인
+                console.log('Content raw:', JSON.stringify(content.content.slice(0, 200)));
+                return (
+                  <div
+                    key={content.id}
+                    className="p-4 bg-amber-50 border border-amber-200 rounded-lg"
+                  >
+                    <h4 className="font-semibold text-gray-900 mb-2">
+                      {content.title}
+                    </h4>
+                    <div className="prose prose-sm prose-gray max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-h1:text-xl prose-h2:text-lg prose-h2:mt-6 prose-h2:mb-3 prose-p:text-gray-700 prose-blockquote:border-amber-400 prose-blockquote:bg-amber-50 prose-blockquote:py-1 prose-strong:text-gray-900">
+                      <ReactMarkdown>{content.content}</ReactMarkdown>
+                    </div>
+                    <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                      <span>신뢰도: {Math.round(content.confidenceScore * 100)}%</span>
+                    </div>
                   </div>
-                  <div className="mt-3 flex items-center gap-4 text-xs text-gray-500">
-                    <span>신뢰도: {Math.round(content.confidenceScore * 100)}%</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

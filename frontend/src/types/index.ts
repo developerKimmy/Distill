@@ -72,7 +72,11 @@ export interface NotificationSettings {
   enabled: boolean;
   times: string[];
   timezone: string;
+  categories: string[];
 }
+
+// 사용 가능한 카테고리
+export const AVAILABLE_CATEGORIES = ['정치', '경제', '사회', 'IT', '문화'];
 
 // API 응답
 export interface PaginatedResponse<T> {

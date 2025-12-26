@@ -81,3 +81,41 @@ class GlobalBatchService:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def get_issues_by_batch(
+        self,
+        batch_run_id,
+        categories: list[str] | None = None
+    ) -> list[dict]:
+        """배치에서 수집된 이슈 조회 (카테고리 필터링 지원)
+
+        Returns:
+            list of dict with issue info: {name, category, summary, article_count}
+        """
+        from app.issues.models import Issue, IssueDailySnapshot
+
+        stmt = (
+            select(Issue, IssueDailySnapshot)
+            .join(IssueDailySnapshot, Issue.id == IssueDailySnapshot.issue_id)
+            .where(IssueDailySnapshot.batch_run_id == batch_run_id)
+        )
+
+        # 카테고리 필터링 (빈 리스트가 아닌 경우에만)
+        if categories:
+            stmt = stmt.where(Issue.category.in_(categories))
+
+        stmt = stmt.order_by(IssueDailySnapshot.article_count.desc())
+
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        issues = []
+        for issue, snapshot in rows:
+            issues.append({
+                "name": issue.name,
+                "category": issue.category,
+                "summary": snapshot.summary,
+                "article_count": snapshot.article_count
+            })
+
+        return issues

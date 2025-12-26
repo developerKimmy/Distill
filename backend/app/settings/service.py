@@ -34,18 +34,21 @@ class UserSettingsService:
         """알림 설정 조회"""
         settings = await self.get_or_create(user_id)
         times = settings.notification_times.split(",") if settings.notification_times else []
+        categories = settings.category_filter.split(",") if settings.category_filter else []
 
         return {
             "enabled": settings.email_notifications_enabled,
             "times": times,
-            "timezone": settings.timezone
+            "timezone": settings.timezone,
+            "categories": categories
         }
 
     async def update_notification_settings(
         self,
         user_id: UUID,
         enabled: bool | None = None,
-        times: list[str] | None = None
+        times: list[str] | None = None,
+        categories: list[str] | None = None
     ) -> UserSettings:
         """알림 설정 수정"""
         settings = await self.get_or_create(user_id)
@@ -55,6 +58,9 @@ class UserSettingsService:
 
         if times is not None:
             settings.notification_times = ",".join(times) if times else None
+
+        if categories is not None:
+            settings.category_filter = ",".join(categories) if categories else None
 
         await self.db.commit()
         await self.db.refresh(settings)

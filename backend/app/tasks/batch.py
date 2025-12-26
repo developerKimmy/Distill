@@ -71,19 +71,29 @@ async def _send_scheduled_notifications():
         if settings.GMAIL_USER and settings.GMAIL_APP_PASSWORD:
             email_service = EmailService(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
 
-            duration = (batch_run.completed_at - batch_run.started_at).total_seconds() if batch_run.completed_at else 0
-
             for user in users:
                 try:
-                    email_service.send_batch_complete(
-                        recipient=user.email,
-                        issues_count=batch_run.issues_created,
-                        duration_seconds=duration,
-                        success_count=batch_run.issues_created,
-                        fail_count=0
+                    # 유저의 카테고리 설정 조회
+                    user_settings = await settings_service.get_notification_settings(user.id)
+                    user_categories = user_settings.get("categories", [])
+
+                    # 카테고리로 필터링된 이슈 조회 (빈 리스트면 전체)
+                    issues = await batch_service.get_issues_by_batch(
+                        batch_run.id,
+                        categories=user_categories if user_categories else None
                     )
-                    sent_count += 1
-                    print(f"[NOTIFICATION] Sent to {user.email}")
+
+                    if issues:
+                        email_service.send_issues_digest(
+                            recipient=user.email,
+                            issues=issues,
+                            categories=user_categories if user_categories else None
+                        )
+                        sent_count += 1
+                        print(f"[NOTIFICATION] Sent to {user.email} ({len(issues)} issues, categories: {user_categories or 'all'})")
+                    else:
+                        print(f"[NOTIFICATION] No issues to send for {user.email} (categories: {user_categories})")
+
                 except Exception as e:
                     print(f"[NOTIFICATION] Failed to send to {user.email}: {e}")
 

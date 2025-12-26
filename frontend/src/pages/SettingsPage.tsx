@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getGlobalBatchStatus } from '../api/batch';
 import { getNotificationSettings, updateNotificationSettings } from '../api/settings';
+import { AVAILABLE_CATEGORIES } from '../types';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [times, setTimes] = useState<string[]>(['09:00', '18:00']);
   const [enabled, setEnabled] = useState(true);
   const [newTime, setNewTime] = useState('');
+  const [categories, setCategories] = useState<string[]>([]);
 
   // 글로벌 배치 상태 조회 (read-only)
   const { data: batchStatus, isLoading: loadingBatch } = useQuery({
@@ -26,12 +28,33 @@ export default function SettingsPage() {
     if (notificationSettings) {
       setEnabled(notificationSettings.enabled);
       setTimes(notificationSettings.times || []);
+      setCategories(notificationSettings.categories || []);
     }
   }, [notificationSettings]);
 
+  // 변경사항 확인
+  const hasChanges = useMemo(() => {
+    if (!notificationSettings) return false;
+
+    const serverTimes = notificationSettings.times || [];
+    const serverCategories = notificationSettings.categories || [];
+
+    const timesChanged =
+      times.length !== serverTimes.length ||
+      times.some((t) => !serverTimes.includes(t));
+
+    const categoriesChanged =
+      categories.length !== serverCategories.length ||
+      categories.some((c) => !serverCategories.includes(c));
+
+    const enabledChanged = enabled !== notificationSettings.enabled;
+
+    return timesChanged || categoriesChanged || enabledChanged;
+  }, [notificationSettings, times, categories, enabled]);
+
   // 알림 설정 수정
   const updateMutation = useMutation({
-    mutationFn: (data: { enabled?: boolean; times?: string[] }) =>
+    mutationFn: (data: { enabled?: boolean; times?: string[]; categories?: string[] }) =>
       updateNotificationSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationSettings'] });
@@ -43,20 +66,45 @@ export default function SettingsPage() {
       const updated = [...times, newTime].sort();
       setTimes(updated);
       setNewTime('');
-      updateMutation.mutate({ times: updated });
     }
   };
 
   const handleRemoveTime = (time: string) => {
     const updated = times.filter((t) => t !== time);
     setTimes(updated);
-    updateMutation.mutate({ times: updated });
   };
 
   const handleToggle = () => {
-    const newEnabled = !enabled;
-    setEnabled(newEnabled);
-    updateMutation.mutate({ enabled: newEnabled });
+    setEnabled(!enabled);
+  };
+
+  const handleCategoryToggle = (category: string) => {
+    const updated = categories.includes(category)
+      ? categories.filter((c) => c !== category)
+      : [...categories, category];
+    setCategories(updated);
+  };
+
+  const handleSelectAllCategories = () => {
+    const allSelected = categories.length === AVAILABLE_CATEGORIES.length;
+    const updated = allSelected ? [] : [...AVAILABLE_CATEGORIES];
+    setCategories(updated);
+  };
+
+  const handleSave = () => {
+    updateMutation.mutate({
+      enabled,
+      times,
+      categories,
+    });
+  };
+
+  const handleReset = () => {
+    if (notificationSettings) {
+      setEnabled(notificationSettings.enabled);
+      setTimes(notificationSettings.times || []);
+      setCategories(notificationSettings.categories || []);
+    }
   };
 
   if (loadingBatch || loadingSettings) {
@@ -115,7 +163,6 @@ export default function SettingsPage() {
           </div>
           <button
             onClick={handleToggle}
-            disabled={updateMutation.isPending}
             className={`relative w-14 h-8 rounded-full transition-colors ${
               enabled ? 'bg-amber-600' : 'bg-gray-300'
             }`}
@@ -165,12 +212,82 @@ export default function SettingsPage() {
               />
               <button
                 onClick={handleAddTime}
-                disabled={!newTime || updateMutation.isPending}
-                className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                disabled={!newTime}
+                className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50"
               >
                 추가
               </button>
             </div>
+          </div>
+        )}
+
+        {/* 카테고리 선택 (enabled일 때만 표시) */}
+        {enabled && (
+          <div className="border-t border-gray-200 pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="font-medium text-gray-900">알림 받을 카테고리</p>
+                <p className="text-sm text-gray-500">
+                  선택한 카테고리의 이슈만 알림을 받습니다.
+                </p>
+              </div>
+              <button
+                onClick={handleSelectAllCategories}
+                className="text-sm text-amber-600 hover:text-amber-700 font-medium"
+              >
+                {categories.length === AVAILABLE_CATEGORIES.length ? '전체 해제' : '전체 선택'}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {AVAILABLE_CATEGORIES.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => handleCategoryToggle(category)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    categories.includes(category)
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+            {categories.length === 0 && (
+              <p className="text-sm text-amber-600 mt-3">
+                카테고리를 선택하지 않으면 모든 카테고리의 알림을 받습니다.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* 저장 버튼 */}
+        {hasChanges && (
+          <div className="border-t border-gray-200 pt-6 flex items-center justify-between">
+            <p className="text-sm text-gray-500">변경사항이 있습니다.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleReset}
+                disabled={updateMutation.isPending}
+                className="px-4 py-2 text-gray-600 text-sm rounded-lg hover:bg-gray-100 disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={updateMutation.isPending}
+                className="px-6 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50"
+              >
+                {updateMutation.isPending ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 저장 성공 메시지 */}
+        {updateMutation.isSuccess && !hasChanges && (
+          <div className="border-t border-gray-200 pt-6">
+            <p className="text-sm text-green-600">설정이 저장되었습니다.</p>
           </div>
         )}
       </div>

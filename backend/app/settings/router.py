@@ -23,7 +23,8 @@ async def get_notification_settings(
     return NotificationSettingsResponse(
         enabled=settings["enabled"],
         times=settings["times"],
-        timezone=settings["timezone"]
+        timezone=settings["timezone"],
+        categories=settings["categories"]
     )
 
 
@@ -38,12 +39,14 @@ async def update_notification_settings(
     await service.update_notification_settings(
         user_id=user.id,
         enabled=request.enabled,
-        times=request.times
+        times=request.times,
+        categories=request.categories
     )
     settings = await service.get_notification_settings(user.id)
 
     return NotificationSettingsResponse(
         enabled=settings["enabled"],
         times=settings["times"],
-        timezone=settings["timezone"]
+        timezone=settings["timezone"],
+        categories=settings["categories"]
     )
