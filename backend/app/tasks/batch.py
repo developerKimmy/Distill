@@ -3,14 +3,19 @@ import asyncio
 import time
 from datetime import datetime, timezone, timedelta
 
+from sqlalchemy import select
+
 from app.core.celery_app import celery_app
 
 # 한국 시간대 (UTC+9)
 KST = timezone(timedelta(hours=9))
-from app.core.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal, SessionLocal
 from app.core.config import settings
 from app.batch.service import GlobalBatchService
-from app.settings.service import UserSettingsService
+from app.batch.models import BatchRun
+from app.settings.models import UserSettings
+from app.auth.models import User
+from app.issues.models import Issue, IssueDailySnapshot
 from app.common.utils import EmailService
 
 
@@ -40,31 +45,49 @@ async def _run_global_batch(triggered_by: str):
 
 @celery_app.task(bind=True, name="app.tasks.batch.send_scheduled_notifications")
 def send_scheduled_notifications(self):
-    """현재 시간에 알림 받을 유저들에게 이메일 발송"""
+    """현재 시간에 알림 받을 유저들에게 이메일 발송 (동기 버전)"""
     print(f"[TASK] Checking scheduled notifications...")
-    result = asyncio.run(_send_scheduled_notifications())
+    result = _send_scheduled_notifications_sync()
     print(f"[TASK] Notification check completed: {result}")
     return result
 
 
-async def _send_scheduled_notifications():
-    """비동기 알림 발송"""
-    async with AsyncSessionLocal() as db:
-        current_time = datetime.now(KST).strftime("%H:%M")
+def _send_scheduled_notifications_sync():
+    """동기 알림 발송 - Celery 태스크에서 안전하게 실행"""
+    current_time = datetime.now(KST).strftime("%H:%M")
+    print(f"[NOTIFICATION] Current time (KST): {current_time}")
 
+    db = SessionLocal()
+    try:
         # 최근 완료된 배치 조회
-        batch_service = GlobalBatchService(db)
-        batch_run = await batch_service.get_latest_completed_batch()
+        batch_run = db.execute(
+            select(BatchRun)
+            .where(BatchRun.status == "completed")
+            .order_by(BatchRun.completed_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
 
         if not batch_run:
+            print("[NOTIFICATION] No completed batch found")
             return {"sent_count": 0, "message": "No completed batch found"}
 
+        print(f"[NOTIFICATION] Found batch: {batch_run.id}, issues: {batch_run.issues_created}")
+
         # 현재 시간에 알림 받을 유저 조회
-        settings_service = UserSettingsService(db)
-        users = await settings_service.get_users_for_notification(current_time)
+        users = db.execute(
+            select(User)
+            .join(UserSettings)
+            .where(
+                UserSettings.email_notifications_enabled == True,
+                UserSettings.notification_times.contains(current_time)
+            )
+        ).scalars().all()
 
         if not users:
+            print(f"[NOTIFICATION] No users to notify at {current_time}")
             return {"sent_count": 0, "checked_at": current_time, "message": "No users to notify"}
+
+        print(f"[NOTIFICATION] Found {len(users)} users to notify")
 
         # 이메일 발송
         sent_count = 0
@@ -74,31 +97,72 @@ async def _send_scheduled_notifications():
             for user in users:
                 try:
                     # 유저의 카테고리 설정 조회
-                    user_settings = await settings_service.get_notification_settings(user.id)
-                    user_categories = user_settings.get("categories", [])
+                    user_settings = db.execute(
+                        select(UserSettings).where(UserSettings.user_id == user.id)
+                    ).scalar_one_or_none()
 
-                    # 카테고리로 필터링된 이슈 조회 (빈 리스트면 전체)
-                    issues = await batch_service.get_issues_by_batch(
-                        batch_run.id,
-                        categories=user_categories if user_categories else None
+                    user_categories = []
+                    if user_settings and user_settings.category_filter:
+                        user_categories = user_settings.category_filter.split(",")
+
+                    print(f"[NOTIFICATION] User {user.email} categories: {user_categories or 'all'}")
+
+                    # 카테고리로 필터링된 이슈 조회
+                    stmt = (
+                        select(Issue, IssueDailySnapshot)
+                        .join(IssueDailySnapshot, Issue.id == IssueDailySnapshot.issue_id)
+                        .where(IssueDailySnapshot.batch_run_id == batch_run.id)
                     )
 
+                    if user_categories:
+                        stmt = stmt.where(Issue.category.in_(user_categories))
+
+                    stmt = stmt.order_by(IssueDailySnapshot.article_count.desc())
+
+                    rows = db.execute(stmt).all()
+                    issues = []
+                    for issue, snapshot in rows:
+                        issues.append({
+                            "name": issue.name,
+                            "category": issue.category,
+                            "summary": snapshot.summary,
+                            "article_count": snapshot.article_count
+                        })
+
+                    print(f"[NOTIFICATION] Found {len(issues)} issues for {user.email}")
+
                     if issues:
-                        email_service.send_issues_digest(
+                        success = email_service.send_issues_digest(
                             recipient=user.email,
                             issues=issues,
                             categories=user_categories if user_categories else None
                         )
-                        sent_count += 1
-                        print(f"[NOTIFICATION] Sent to {user.email} ({len(issues)} issues, categories: {user_categories or 'all'})")
+                        if success:
+                            sent_count += 1
+                            print(f"[NOTIFICATION] Sent to {user.email}")
+                        else:
+                            print(f"[NOTIFICATION] Failed to send to {user.email}")
                     else:
-                        print(f"[NOTIFICATION] No issues to send for {user.email} (categories: {user_categories})")
+                        print(f"[NOTIFICATION] No issues to send for {user.email}")
 
                 except Exception as e:
-                    print(f"[NOTIFICATION] Failed to send to {user.email}: {e}")
+                    print(f"[NOTIFICATION] Error for {user.email}: {e}")
+                    import traceback
+                    traceback.print_exc()
+        else:
+            print("[NOTIFICATION] Gmail settings not configured")
 
         return {
             "sent_count": sent_count,
             "checked_at": current_time,
             "batch_run_id": str(batch_run.id)
         }
+
+    except Exception as e:
+        print(f"[NOTIFICATION] Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"sent_count": 0, "error": str(e)}
+
+    finally:
+        db.close()
