@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import Field, field_validator
 
 from app.common.schema import BaseSchema
@@ -9,6 +10,7 @@ class NotificationSettingsResponse(BaseSchema):
     times: list[str]
     timezone: str
     categories: list[str]  # 알림 받을 카테고리 목록
+    created_at: datetime  # 가입 날짜
 
 
 class NotificationSettingsUpdateRequest(BaseSchema):

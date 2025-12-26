@@ -1,6 +1,21 @@
 import client from './client';
 import type { Issue, IssueDetail, DailyReport, PaginatedResponse } from '../types';
 
+// 달력용 경량 이슈
+export interface CalendarIssue {
+  id: string;
+  name: string;
+  category: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+// 달력용 이슈 목록 조회 (빠른 응답)
+export const getIssuesForCalendar = async (): Promise<CalendarIssue[]> => {
+  const { data } = await client.get('/issues/calendar');
+  return data;
+};
+
 // 이슈 목록 조회
 export const getIssues = async (page = 1, size = 20): Promise<PaginatedResponse<Issue>> => {
   const { data } = await client.get('/issues', {

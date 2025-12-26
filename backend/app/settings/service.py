@@ -40,7 +40,8 @@ class UserSettingsService:
             "enabled": settings.email_notifications_enabled,
             "times": times,
             "timezone": settings.timezone,
-            "categories": categories
+            "categories": categories,
+            "created_at": settings.created_at
         }
 
     async def update_notification_settings(

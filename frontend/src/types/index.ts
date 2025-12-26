@@ -73,6 +73,7 @@ export interface NotificationSettings {
   times: string[];
   timezone: string;
   categories: string[];
+  createdAt: string;  // 가입 날짜
 }
 
 // 사용 가능한 카테고리

@@ -50,6 +50,15 @@ class IssueResponse(BaseSchema):
     status: str
 
 
+# 달력용 경량 이슈 정보
+class CalendarIssueResponse(BaseSchema):
+    id: str
+    name: str
+    category: str | None
+    first_seen_at: date
+    last_seen_at: date
+
+
 # 이슈 목록 아이템 (최신 스냅샷 정보 포함)
 class IssueListItem(IssueResponse):
     latest_article_count: int | None = None

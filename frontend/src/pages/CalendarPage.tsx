@@ -1,11 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, dateFnsLocalizer, type View } from 'react-big-calendar';
-import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { format, parse, startOfWeek, getDay, isBefore, startOfDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { getGlobalBatchStatus } from '../api/batch';
-import { getIssues } from '../api/issues';
+import { getIssuesForCalendar, getBatchDates } from '../api/issues';
+import { getNotificationSettings } from '../api/settings';
 
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import './CalendarPage.css';
@@ -35,6 +36,13 @@ interface CalendarEvent {
 
 export default function CalendarPage() {
   const navigate = useNavigate();
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  // 유저 설정 (가입 날짜 포함)
+  const { data: userSettings } = useQuery({
+    queryKey: ['notificationSettings'],
+    queryFn: getNotificationSettings,
+  });
 
   // 글로벌 배치 상태
   const { data: batchStatus } = useQuery({
@@ -42,28 +50,46 @@ export default function CalendarPage() {
     queryFn: getGlobalBatchStatus,
   });
 
-  // 이슈 목록 (전체)
-  const { data: issuesData } = useQuery({
-    queryKey: ['issues'],
-    queryFn: () => getIssues(1, 100),
+  // 달력용 이슈 목록 (경량 API)
+  const { data: issues } = useQuery({
+    queryKey: ['issues-calendar'],
+    queryFn: getIssuesForCalendar,
   });
+
+  // 이슈가 있는 날짜 목록 (현재 월 기준)
+  const { data: batchDates } = useQuery({
+    queryKey: ['batchDates', currentDate.getFullYear(), currentDate.getMonth() + 1],
+    queryFn: () => getBatchDates(currentDate.getFullYear(), currentDate.getMonth() + 1),
+  });
+
+  // 가입 날짜
+  const signupDate = useMemo(() => {
+    if (!userSettings?.createdAt) return null;
+    return startOfDay(new Date(userSettings.createdAt));
+  }, [userSettings]);
+
+  // 이슈가 있는 날짜 Set
+  const activeDates = useMemo(() => {
+    if (!batchDates) return new Set<string>();
+    return new Set(batchDates);
+  }, [batchDates]);
 
   // 이슈를 캘린더 이벤트로 변환
   const events: CalendarEvent[] = useMemo(() => {
-    if (!issuesData?.items) return [];
+    if (!issues) return [];
 
-    return issuesData.items.map((issue) => ({
+    return issues.map((issue) => ({
       id: issue.id,
-      title: `${issue.name} (${issue.totalSnapshots}일)`,
+      title: issue.name,
       start: new Date(issue.firstSeenAt),
       end: new Date(issue.lastSeenAt),
       resource: {
         issueId: issue.id,
-        articleCount: issue.totalSnapshots,
+        articleCount: 0,
         category: issue.category,
       },
     }));
-  }, [issuesData]);
+  }, [issues]);
 
   // 이벤트 클릭
   const handleSelectEvent = (event: CalendarEvent) => {
@@ -100,6 +126,40 @@ export default function CalendarPage() {
         fontSize: '12px',
       },
     };
+  };
+
+  // 날짜 셀 스타일 (비활성화 처리)
+  const dayPropGetter = (date: Date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const today = startOfDay(new Date());
+
+    // 가입 전 날짜인지 확인
+    const isBeforeSignup = signupDate && isBefore(startOfDay(date), signupDate);
+
+    // 이슈가 없는 날짜인지 확인 (오늘 이전 날짜만 체크)
+    const isPast = isBefore(startOfDay(date), today);
+    const hasNoIssues = isPast && !activeDates.has(dateStr);
+
+    // 비활성화 조건
+    const isDisabled = isBeforeSignup || hasNoIssues;
+
+    if (isDisabled) {
+      return {
+        className: 'rbc-day-disabled',
+        style: {
+          backgroundColor: '#f3f4f6',
+          color: '#d1d5db',
+          pointerEvents: 'none' as const,
+        },
+      };
+    }
+
+    return {};
+  };
+
+  // 월 변경 시 처리
+  const handleNavigate = (date: Date) => {
+    setCurrentDate(date);
   };
 
   // 메시지 한글화
@@ -146,6 +206,9 @@ export default function CalendarPage() {
           onSelectSlot={handleSelectSlot}
           selectable
           eventPropGetter={eventStyleGetter}
+          dayPropGetter={dayPropGetter}
+          onNavigate={handleNavigate}
+          date={currentDate}
           messages={messages}
           defaultView={'month' as View}
           views={['month'] as View[]}

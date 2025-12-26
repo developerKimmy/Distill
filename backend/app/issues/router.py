@@ -15,6 +15,7 @@ from app.issues.schemas import (
     DailyReportResponse,
     DailySnapshotWithIssue,
     IssueResponse,
+    CalendarIssueResponse,
 )
 from app.auth.models import User
 from app.auth.router import current_active_user
@@ -34,6 +35,28 @@ async def get_user_categories(
     return categories if categories else None
 
 
+@router.get("/calendar", response_model=list[CalendarIssueResponse])
+async def list_issues_for_calendar(
+        db: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
+):
+    """달력용 경량 이슈 목록 (빠른 응답)"""
+    categories = await get_user_categories(db, user)
+    service = IssueService(db)
+    issues = await service.list_issues_for_calendar(categories=categories)
+
+    return [
+        CalendarIssueResponse(
+            id=str(issue.id),
+            name=issue.name,
+            category=issue.category,
+            first_seen_at=issue.first_seen_at,
+            last_seen_at=issue.last_seen_at,
+        )
+        for issue in issues
+    ]
+
+
 @router.get("", response_model=IssueListResponse)
 async def list_issues(
         page: int = Query(1, ge=1),
@@ -41,10 +64,9 @@ async def list_issues(
         db: AsyncSession = Depends(get_async_session),
         user: User = Depends(current_active_user)
 ):
-    """이슈 목록 조회 (유저 관심사 필터링)"""
-    categories = await get_user_categories(db, user)
+    """이슈 목록 조회 (전체)"""
     service = IssueService(db)
-    issues, total = await service.list_issues(page=page, size=size, categories=categories)
+    issues, total = await service.list_issues(page=page, size=size)
 
     items = []
     for issue in issues:

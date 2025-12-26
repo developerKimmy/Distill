@@ -49,3 +49,18 @@
 .rbc-header:last-child {
   color: #9ca3af;
 }
+
+/* 비활성화된 날짜 셀 */
+.rbc-day-disabled {
+  background-color: #f3f4f6 !important;
+  cursor: not-allowed !important;
+}
+
+.rbc-day-disabled .rbc-date-cell {
+  color: #d1d5db !important;
+}
+
+.rbc-day-disabled .rbc-button-link {
+  color: #d1d5db !important;
+  pointer-events: none;
+}

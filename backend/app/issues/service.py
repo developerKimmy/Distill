@@ -372,6 +372,19 @@ class IssueService:
         except Exception as e:
             print(f"임베딩 생성 에러 (이슈: {issue_name}): {e}")
 
+    async def list_issues_for_calendar(
+        self,
+        categories: list[str] | None = None
+    ) -> list[Issue]:
+        """달력용 경량 이슈 목록 조회 (snapshots 로드 안함)"""
+        stmt = select(Issue)
+        if categories:
+            stmt = stmt.where(Issue.category.in_(categories))
+        stmt = stmt.order_by(Issue.last_seen_at.desc())
+
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
     async def list_issues(
         self,
         page: int = 1,

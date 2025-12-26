@@ -24,7 +24,8 @@ async def get_notification_settings(
         enabled=settings["enabled"],
         times=settings["times"],
         timezone=settings["timezone"],
-        categories=settings["categories"]
+        categories=settings["categories"],
+        created_at=settings["created_at"]
     )
 
 
@@ -48,5 +49,6 @@ async def update_notification_settings(
         enabled=settings["enabled"],
         times=settings["times"],
         timezone=settings["timezone"],
-        categories=settings["categories"]
+        categories=settings["categories"],
+        created_at=settings["created_at"]
     )
