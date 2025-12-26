@@ -77,7 +77,7 @@ export interface NotificationSettings {
 }
 
 // 사용 가능한 카테고리
-export const AVAILABLE_CATEGORIES = ['정치', '경제', '사회', 'IT', '문화'];
+export const AVAILABLE_CATEGORIES = ['정치', '경제', '사회', '세계', '연예', 'IT/과학'];
 
 // API 응답
 export interface PaginatedResponse<T> {

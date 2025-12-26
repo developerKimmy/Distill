@@ -65,13 +65,14 @@ export default function IssueListPage() {
     );
   }
 
-  const categoryColors: Record<string, string> = {
-    정치: 'bg-red-100 text-red-800',
-    경제: 'bg-amber-100 text-amber-800',
-    사회: 'bg-emerald-100 text-emerald-800',
-    IT: 'bg-sky-100 text-sky-800',
-    문화: 'bg-violet-100 text-violet-800',
-    기타: 'bg-gray-100 text-gray-800',
+  const categoryColors: Record<string, { badge: string; dot: string }> = {
+    정치: { badge: 'bg-rose-100 text-rose-800', dot: 'bg-rose-600' },
+    경제: { badge: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500' },
+    사회: { badge: 'bg-teal-100 text-teal-800', dot: 'bg-teal-500' },
+    세계: { badge: 'bg-blue-100 text-blue-800', dot: 'bg-blue-500' },
+    연예: { badge: 'bg-pink-100 text-pink-800', dot: 'bg-pink-500' },
+    'IT/과학': { badge: 'bg-violet-100 text-violet-800', dot: 'bg-violet-600' },
+    기타: { badge: 'bg-gray-100 text-gray-800', dot: 'bg-gray-500' },
   };
 
   const renderIssueCard = (issue: Issue) => (
@@ -123,7 +124,7 @@ export default function IssueListPage() {
             <div className="flex items-center gap-2">
               <span
                 className={`px-2 py-1 rounded-full text-sm font-medium ${
-                  categoryColors[category] || categoryColors['기타']
+                  (categoryColors[category] || categoryColors['기타']).badge
                 }`}
               >
                 {category}
@@ -148,6 +149,18 @@ export default function IssueListPage() {
         <p className="text-sm text-gray-500">
           총 {data?.total || 0}개 이슈
         </p>
+      </div>
+
+      {/* 카테고리 범례 */}
+      <div className="flex items-center gap-5 text-sm text-gray-600">
+        {Object.entries(categoryColors)
+          .filter(([key]) => key !== '기타')
+          .map(([category, colors]) => (
+            <span key={category} className="flex items-center gap-1.5">
+              <span className={`w-2.5 h-2.5 rounded-sm ${colors.dot}`}></span>
+              {category}
+            </span>
+          ))}
       </div>
 
       {/* 콘텐츠 섹션 */}

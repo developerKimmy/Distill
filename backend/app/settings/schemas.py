@@ -45,4 +45,4 @@ class NotificationSettingsUpdateRequest(BaseSchema):
 
 
 # 사용 가능한 카테고리 목록
-AVAILABLE_CATEGORIES = ["정치", "경제", "사회", "IT", "문화"]
+AVAILABLE_CATEGORIES = ["정치", "경제", "사회", "세계", "연예", "IT/과학"]

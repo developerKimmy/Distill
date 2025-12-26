@@ -56,7 +56,7 @@ class ClusteringProvider:
        - name: 이슈명 (검색 키워드로 쓸 수 있게 간결하게)
        - summary: 요약 (1-2문장)
        - article_indices: 관련 기사 인덱스 배열
-       - category: 카테고리 (정치, 경제, 사회, 연예, 스포츠, IT/과학, 세계)
+       - category: 카테고리 (정치, 경제, 사회, 세계, 연예, IT/과학)
        - issue_type: "ongoing" (수사/재판/협상 등 진행 중) 또는 "concluded" (이미 종결된 사건)
        - related_search_terms: 후속 검색에 사용할 핵심 엔티티 (인물명, 기관명 등) 1~3개
 
