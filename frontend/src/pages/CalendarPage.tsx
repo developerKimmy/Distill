@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -21,31 +21,117 @@ import {
 import { ko } from 'date-fns/locale';
 import { getGlobalBatchStatus } from '../api/batch';
 import { getIssuesForCalendar, getBatchDates, type CalendarIssue } from '../api/issues';
-
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-
-// YYYY-MM-DD 문자열을 로컬 시간대로 파싱 (UTC 문제 방지)
-const parseLocalDate = (dateStr: string): Date => {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  정치: { bg: 'bg-rose-600', text: 'text-white' },
-  경제: { bg: 'bg-amber-500', text: 'text-white' },
-  사회: { bg: 'bg-teal-500', text: 'text-white' },
-  세계: { bg: 'bg-blue-500', text: 'text-white' },
-  연예: { bg: 'bg-pink-500', text: 'text-white' },
-  'IT/과학': { bg: 'bg-violet-600', text: 'text-white' },
-};
+import { WEEKDAYS, getCategoryColors } from '../utils/constants';
+import { parseLocalDate } from '../utils/dateFormat';
 
 interface WeekIssue {
   issue: CalendarIssue;
-  startCol: number; // 0-6
-  endCol: number; // 0-6
+  startCol: number;
+  endCol: number;
   row: number;
-  isStart: boolean; // 이번 주에서 시작하는지
-  isEnd: boolean; // 이번 주에서 끝나는지
+  isStart: boolean;
+  isEnd: boolean;
+}
+
+// memo for list items in calendar grid
+const IssueBar = memo(function IssueBar({
+  weekIssue,
+  issueRowHeight,
+  onClick,
+}: {
+  weekIssue: WeekIssue;
+  issueRowHeight: number;
+  onClick: () => void;
+}) {
+  const { issue, startCol, endCol, row, isStart, isEnd } = weekIssue;
+  const colors = getCategoryColors(issue.category);
+  const leftPercent = (startCol / 7) * 100;
+  const widthPercent = ((endCol - startCol + 1) / 7) * 100;
+
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`
+        absolute pointer-events-auto cursor-pointer
+        ${colors.bg} ${colors.text}
+        text-[10px] sm:text-xs truncate px-1 sm:px-2 py-0.5
+        hover:opacity-80 transition-opacity
+        ${isStart ? 'rounded-l' : ''}
+        ${isEnd ? 'rounded-r' : ''}
+      `}
+      style={{
+        left: `calc(${leftPercent}% + 2px)`,
+        width: `calc(${widthPercent}% - 4px)`,
+        top: `${row * issueRowHeight}px`,
+        height: '16px',
+        lineHeight: '16px',
+      }}
+      title={issue.name}
+    >
+      {isStart && issue.name}
+    </div>
+  );
+});
+
+// Pure function for week issues calculation
+function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefined): WeekIssue[] {
+  if (!issues) return [];
+
+  const weekStart = weekDays[0];
+  const weekEnd = weekDays[6];
+  const result: WeekIssue[] = [];
+  const rows: boolean[][] = [];
+
+  const weekIssues = issues.filter((issue) => {
+    const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
+    const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
+    return !isAfter(issueStart, weekEnd) && !isBefore(issueEnd, weekStart);
+  });
+
+  weekIssues.sort((a, b) => {
+    const aStart = parseLocalDate(a.firstSeenAt);
+    const bStart = parseLocalDate(b.firstSeenAt);
+    const aDuration = parseLocalDate(a.lastSeenAt).getTime() - aStart.getTime();
+    const bDuration = parseLocalDate(b.lastSeenAt).getTime() - bStart.getTime();
+    return aStart.getTime() !== bStart.getTime()
+      ? aStart.getTime() - bStart.getTime()
+      : bDuration - aDuration;
+  });
+
+  weekIssues.forEach((issue) => {
+    const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
+    const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
+    const visibleStart = max([issueStart, weekStart]);
+    const visibleEnd = min([issueEnd, weekEnd]);
+
+    const startCol = Math.floor((visibleStart.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
+    const endCol = Math.floor((visibleEnd.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
+
+    let rowIndex = 0;
+    while (rowIndex <= 10) {
+      if (!rows[rowIndex]) rows[rowIndex] = Array(7).fill(false);
+      const canFit = !rows[rowIndex].slice(startCol, endCol + 1).some(Boolean);
+      if (canFit) {
+        for (let c = startCol; c <= endCol; c++) rows[rowIndex][c] = true;
+        break;
+      }
+      rowIndex++;
+    }
+
+    result.push({
+      issue,
+      startCol,
+      endCol,
+      row: rowIndex,
+      isStart: isSameDay(issueStart, visibleStart),
+      isEnd: isSameDay(issueEnd, visibleEnd),
+    });
+  });
+
+  return result;
 }
 
 export default function CalendarPage() {
@@ -56,6 +142,7 @@ export default function CalendarPage() {
     issues: CalendarIssue[];
     position: { x: number; y: number };
   } | null>(null);
+
   const today = startOfDay(new Date());
 
   const { data: batchStatus } = useQuery({
@@ -73,12 +160,8 @@ export default function CalendarPage() {
     queryFn: () => getBatchDates(currentMonth.getFullYear(), currentMonth.getMonth() + 1),
   });
 
-  const activeDates = useMemo(() => {
-    if (!batchDates) return new Set<string>();
-    return new Set(batchDates);
-  }, [batchDates]);
+  const activeDates = useMemo(() => new Set(batchDates || []), [batchDates]);
 
-  // 주 단위로 캘린더 생성
   const weeks = useMemo(() => {
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
@@ -97,118 +180,28 @@ export default function CalendarPage() {
       }
       day = addDays(day, 1);
     }
-
     return result;
   }, [currentMonth]);
 
-  // 주별 이슈 배치 계산
-  const getWeekIssues = (weekDays: Date[]): WeekIssue[] => {
-    if (!issues) return [];
-
-    const weekStart = weekDays[0];
-    const weekEnd = weekDays[6];
-    const result: WeekIssue[] = [];
-    const rows: boolean[][] = []; // 각 row의 column 사용 여부
-
-    // 이 주에 해당하는 이슈 필터링
-    const weekIssues = issues.filter((issue) => {
-      const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
-      const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
-      return !isAfter(issueStart, weekEnd) && !isBefore(issueEnd, weekStart);
-    });
-
-    // 시작일 기준 정렬 (더 긴 이슈 우선)
-    weekIssues.sort((a, b) => {
-      const aStart = parseLocalDate(a.firstSeenAt);
-      const bStart = parseLocalDate(b.firstSeenAt);
-      const aDuration = parseLocalDate(a.lastSeenAt).getTime() - aStart.getTime();
-      const bDuration = parseLocalDate(b.lastSeenAt).getTime() - bStart.getTime();
-      if (aStart.getTime() !== bStart.getTime()) {
-        return aStart.getTime() - bStart.getTime();
-      }
-      return bDuration - aDuration;
-    });
-
-    weekIssues.forEach((issue) => {
-      const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
-      const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
-
-      // 이 주에서의 시작/끝 column 계산
-      const visibleStart = max([issueStart, weekStart]);
-      const visibleEnd = min([issueEnd, weekEnd]);
-
-      const startCol = Math.floor(
-        (visibleStart.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const endCol = Math.floor(
-        (visibleEnd.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      // 빈 row 찾기
-      let rowIndex = 0;
-      while (true) {
-        if (!rows[rowIndex]) {
-          rows[rowIndex] = Array(7).fill(false);
-        }
-        let canFit = true;
-        for (let c = startCol; c <= endCol; c++) {
-          if (rows[rowIndex][c]) {
-            canFit = false;
-            break;
-          }
-        }
-        if (canFit) {
-          for (let c = startCol; c <= endCol; c++) {
-            rows[rowIndex][c] = true;
-          }
-          break;
-        }
-        rowIndex++;
-        if (rowIndex > 10) break; // 안전장치
-      }
-
-      result.push({
-        issue,
-        startCol,
-        endCol,
-        row: rowIndex,
-        isStart: isSameDay(issueStart, visibleStart),
-        isEnd: isSameDay(issueEnd, visibleEnd),
-      });
-    });
-
-    return result;
-  };
-
-  const handleDateClick = (date: Date) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
-    const isPast = isBefore(startOfDay(date), today);
-    const hasIssues = activeDates.has(dateStr);
-    if (!isPast || hasIssues) {
-      navigate(`/report/${dateStr}`);
-    }
-  };
-
-  const handleIssueClick = (e: React.MouseEvent, issueId: string) => {
-    e.stopPropagation();
-    navigate(`/issues/${issueId}`);
-  };
+  const allWeekIssues = useMemo(
+    () => weeks.map((weekDays) => calculateWeekIssues(weekDays, issues)),
+    [weeks, issues]
+  );
 
   const isDisabled = (date: Date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    const isPast = isBefore(startOfDay(date), today);
-    return isPast && !activeDates.has(dateStr);
+    return isBefore(startOfDay(date), today) && !activeDates.has(dateStr);
   };
+
+  const issueRowHeight = 18;
+  const maxVisibleRows = 2;
 
   return (
     <div className="max-w-5xl mx-auto">
       {/* 배치 상태 */}
       <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs sm:text-sm text-gray-500 gap-1">
         <span>
-          마지막 수집:{' '}
-          {batchStatus?.lastRunAt
-            ? new Date(batchStatus.lastRunAt).toLocaleString('ko-KR')
-            : '-'}
+          마지막 수집: {batchStatus?.lastRunAt ? new Date(batchStatus.lastRunAt).toLocaleString('ko-KR') : '-'}
         </span>
         <span>다음 수집: {batchStatus?.schedule.join(', ')}</span>
       </div>
@@ -218,7 +211,7 @@ export default function CalendarPage() {
         {/* 헤더 */}
         <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
           <button
-            onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+            onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
             className="p-1.5 sm:p-2 hover:bg-gray-100 rounded transition-colors"
           >
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -229,7 +222,7 @@ export default function CalendarPage() {
             {format(currentMonth, 'yyyy년 M월', { locale: ko })}
           </h2>
           <button
-            onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+            onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
             className="p-1.5 sm:p-2 hover:bg-gray-100 rounded transition-colors"
           >
             <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,32 +247,28 @@ export default function CalendarPage() {
 
         {/* 주별 렌더링 */}
         {weeks.map((weekDays, weekIdx) => {
-          const weekIssues = getWeekIssues(weekDays);
-          const issueRowHeight = 18;
-          const maxVisibleRows = 2; // 모바일에서는 2개로 제한
-
-          // 각 날짜별 숨겨진 이슈 계산
-          const getHiddenIssuesForDate = (dayIdx: number) => {
-            return weekIssues
-              .filter((wi) => wi.startCol <= dayIdx && wi.endCol >= dayIdx && wi.row >= maxVisibleRows)
-              .map((wi) => wi.issue);
-          };
+          const weekIssues = allWeekIssues[weekIdx];
 
           return (
             <div key={weekIdx} className="relative h-[80px] sm:h-[120px]">
-              {/* 날짜 행 */}
               <div className="grid grid-cols-7 h-full">
                 {weekDays.map((date, dayIdx) => {
                   const isCurrentMonth = isSameMonth(date, currentMonth);
                   const isToday = isSameDay(date, today);
                   const disabled = isDisabled(date);
                   const dayOfWeek = date.getDay();
-                  const hiddenIssues = getHiddenIssuesForDate(dayIdx);
+                  const hiddenIssues = weekIssues
+                    .filter((wi) => wi.startCol <= dayIdx && wi.endCol >= dayIdx && wi.row >= maxVisibleRows)
+                    .map((wi) => wi.issue);
 
                   return (
                     <div
                       key={dayIdx}
-                      onClick={() => isCurrentMonth && !disabled && handleDateClick(date)}
+                      onClick={() => {
+                        if (isCurrentMonth && !disabled) {
+                          navigate(`/report/${format(date, 'yyyy-MM-dd')}`);
+                        }
+                      }}
                       className={`
                         relative border-b border-r border-gray-100 p-1 sm:p-2 h-full
                         ${dayIdx === 6 ? 'border-r-0' : ''}
@@ -302,17 +291,12 @@ export default function CalendarPage() {
                           {format(date, 'd')}
                         </span>
                       </div>
-                      {/* 날짜별 +N more 버튼 */}
                       {hiddenIssues.length > 0 && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             const rect = e.currentTarget.getBoundingClientRect();
-                            setMorePopup({
-                              date,
-                              issues: hiddenIssues,
-                              position: { x: rect.left, y: rect.bottom + 4 },
-                            });
+                            setMorePopup({ date, issues: hiddenIssues, position: { x: rect.left, y: rect.bottom + 4 } });
                           }}
                           className="absolute bottom-0.5 sm:bottom-1 left-0.5 sm:left-1 text-[10px] sm:text-xs text-gray-500 hover:text-gray-700 hover:underline z-10"
                         >
@@ -324,49 +308,20 @@ export default function CalendarPage() {
                 })}
               </div>
 
-              {/* 이슈 바 (절대 위치) */}
               <div
                 className="absolute left-0 right-0 pointer-events-none overflow-hidden top-[24px] sm:top-[36px]"
                 style={{ height: `${maxVisibleRows * issueRowHeight}px` }}
               >
                 {weekIssues
                   .filter((wi) => wi.row < maxVisibleRows)
-                  .map((wi, idx) => {
-                    const colors = CATEGORY_COLORS[wi.issue.category || ''] || {
-                      bg: 'bg-gray-500',
-                      text: 'text-white',
-                    };
-                    const leftPercent = (wi.startCol / 7) * 100;
-                    const widthPercent = ((wi.endCol - wi.startCol + 1) / 7) * 100;
-
-                    return (
-                      <div
-                        key={`${wi.issue.id}-${idx}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleIssueClick(e, wi.issue.id);
-                        }}
-                        className={`
-                          absolute pointer-events-auto cursor-pointer
-                          ${colors.bg} ${colors.text}
-                          text-[10px] sm:text-xs truncate px-1 sm:px-2 py-0.5
-                          hover:opacity-80 transition-opacity
-                          ${wi.isStart ? 'rounded-l' : ''}
-                          ${wi.isEnd ? 'rounded-r' : ''}
-                        `}
-                        style={{
-                          left: `calc(${leftPercent}% + 2px)`,
-                          width: `calc(${widthPercent}% - 4px)`,
-                          top: `${wi.row * issueRowHeight}px`,
-                          height: '16px',
-                          lineHeight: '16px',
-                        }}
-                        title={wi.issue.name}
-                      >
-                        {wi.isStart && wi.issue.name}
-                      </div>
-                    );
-                  })}
+                  .map((wi) => (
+                    <IssueBar
+                      key={`${wi.issue.id}-${wi.row}`}
+                      weekIssue={wi}
+                      issueRowHeight={issueRowHeight}
+                      onClick={() => navigate(`/issues/${wi.issue.id}`)}
+                    />
+                  ))}
               </div>
             </div>
           );
@@ -376,12 +331,7 @@ export default function CalendarPage() {
       {/* More 팝업 */}
       {morePopup && (
         <>
-          {/* 배경 오버레이 */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setMorePopup(null)}
-          />
-          {/* 팝업 */}
+          <div className="fixed inset-0 z-40" onClick={() => setMorePopup(null)} />
           <div
             className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs"
             style={{
@@ -395,10 +345,7 @@ export default function CalendarPage() {
               <span className="text-sm font-medium text-gray-700">
                 {format(morePopup.date, 'M월 d일', { locale: ko })} (+{morePopup.issues.length})
               </span>
-              <button
-                onClick={() => setMorePopup(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
+              <button onClick={() => setMorePopup(null)} className="text-gray-400 hover:text-gray-600">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -406,10 +353,7 @@ export default function CalendarPage() {
             </div>
             <div className="space-y-1.5">
               {morePopup.issues.map((issue) => {
-                const colors = CATEGORY_COLORS[issue.category || ''] || {
-                  bg: 'bg-gray-500',
-                  text: 'text-white',
-                };
+                const colors = getCategoryColors(issue.category);
                 return (
                   <div
                     key={issue.id}
@@ -417,11 +361,7 @@ export default function CalendarPage() {
                       setMorePopup(null);
                       navigate(`/issues/${issue.id}`);
                     }}
-                    className={`
-                      ${colors.bg} ${colors.text}
-                      text-xs px-2 py-1.5 rounded cursor-pointer
-                      hover:opacity-80 transition-opacity truncate
-                    `}
+                    className={`${colors.bg} ${colors.text} text-xs px-2 py-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity truncate`}
                     title={issue.name}
                   >
                     {issue.name}

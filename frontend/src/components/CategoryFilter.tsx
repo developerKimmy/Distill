@@ -1,51 +1,50 @@
 import { useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { AVAILABLE_CATEGORIES } from '../types';
+import { AVAILABLE_CATEGORIES } from '../utils/constants';
 import { getStoredCategories, setStoredCategories, isLoggedIn } from '../utils/categories';
+import { useInvalidateCategoryQueries } from '../hooks';
 
 export default function CategoryFilter() {
   const [categories, setCategories] = useState<string[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateQueries = useInvalidateCategoryQueries();
 
   useEffect(() => {
     setCategories(getStoredCategories());
   }, []);
 
   const handleToggle = (category: string) => {
-    const updated = categories.includes(category)
-      ? categories.filter((c) => c !== category)
-      : [...categories, category];
-    setCategories(updated);
-    setStoredCategories(updated);
-    // 데이터 새로고침
-    queryClient.invalidateQueries({ queryKey: ['issues'] });
-    queryClient.invalidateQueries({ queryKey: ['issues-calendar'] });
-    queryClient.invalidateQueries({ queryKey: ['batchDates'] });
-    queryClient.invalidateQueries({ queryKey: ['dailyReport'] });
+    setCategories((prev) => {
+      const updated = prev.includes(category)
+        ? prev.filter((c) => c !== category)
+        : [...prev, category];
+      setStoredCategories(updated);
+      invalidateQueries();
+      return updated;
+    });
   };
 
   const handleSelectAll = () => {
-    const allSelected = categories.length === AVAILABLE_CATEGORIES.length;
-    const updated = allSelected ? [] : [...AVAILABLE_CATEGORIES];
-    setCategories(updated);
-    setStoredCategories(updated);
-    queryClient.invalidateQueries({ queryKey: ['issues'] });
-    queryClient.invalidateQueries({ queryKey: ['issues-calendar'] });
-    queryClient.invalidateQueries({ queryKey: ['batchDates'] });
-    queryClient.invalidateQueries({ queryKey: ['dailyReport'] });
+    setCategories((prev) => {
+      const allSelected = prev.length === AVAILABLE_CATEGORIES.length;
+      const updated = allSelected ? [] : [...AVAILABLE_CATEGORIES];
+      setStoredCategories(updated);
+      invalidateQueries();
+      return updated;
+    });
   };
 
-  const displayText = categories.length === 0
-    ? '전체'
-    : categories.length === AVAILABLE_CATEGORIES.length
-    ? '전체'
-    : categories.join(', ');
+  const toggleOpen = () => setIsOpen((prev) => !prev);
+  const closeDropdown = () => setIsOpen(false);
+
+  const displayText =
+    categories.length === 0 || categories.length === AVAILABLE_CATEGORIES.length
+      ? '전체'
+      : categories.join(', ');
 
   return (
     <div className="relative">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
         className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300"
       >
         <span className="text-gray-400">필터:</span>
@@ -57,7 +56,7 @@ export default function CategoryFilter() {
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+          <div className="fixed inset-0 z-10" onClick={closeDropdown} />
           <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-20 p-3">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-gray-700">카테고리</span>

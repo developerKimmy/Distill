@@ -78,8 +78,8 @@ export interface NotificationSettings {
   createdAt: string;  // 가입 날짜
 }
 
-// 사용 가능한 카테고리
-export const AVAILABLE_CATEGORIES = ['정치', '경제', '사회', '세계', '연예', 'IT/과학'];
+// Re-export for backward compatibility (use utils/constants.ts instead)
+export { AVAILABLE_CATEGORIES } from '../utils/constants';
 
 // API 응답
 export interface PaginatedResponse<T> {
