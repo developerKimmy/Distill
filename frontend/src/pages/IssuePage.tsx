@@ -106,20 +106,22 @@ export default function IssuePage() {
     <div className="space-y-6">
       {/* 헤더 */}
       <div>
-        <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">
+        <Link to="/" className="text-xs sm:text-sm text-gray-500 hover:text-gray-700">
           ← 돌아가기
         </Link>
-        <div className="flex items-start justify-between mt-1">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{issue.name}</h1>
-            <p className="text-sm text-gray-500 mt-1">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mt-2">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{issue.name}</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">
               {issue.category && (
                 <span className="inline-block bg-gray-100 px-2 py-0.5 rounded mr-2">
                   {issue.category}
                 </span>
               )}
-              {formatFullDate(issue.firstSeenAt)} ~ {formatFullDate(issue.lastSeenAt)}
-              <span className="ml-2">({issue.totalSnapshots}일간 추적)</span>
+              <span className="block sm:inline mt-1 sm:mt-0">
+                {formatFullDate(issue.firstSeenAt)} ~ {formatFullDate(issue.lastSeenAt)}
+                <span className="ml-2">({issue.totalSnapshots}일간 추적)</span>
+              </span>
             </p>
           </div>
           {/* 팔로우 버튼 */}
@@ -127,7 +129,7 @@ export default function IssuePage() {
             onClick={handleFollowToggle}
             disabled={isFollowLoading}
             className={`
-              shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto
               ${issue.isFollowing
                 ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 : 'bg-amber-500 text-white hover:bg-amber-600'
@@ -155,14 +157,14 @@ export default function IssuePage() {
       </div>
 
       {/* 추이 그래프 */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-4">기사량 추이</h2>
-        <div className="flex items-end gap-2 h-32">
+      <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
+        <h2 className="text-xs sm:text-sm font-medium text-gray-700 mb-3 sm:mb-4">기사량 추이</h2>
+        <div className="flex items-end gap-1 sm:gap-2 h-24 sm:h-32 overflow-x-auto">
           {[...sortedSnapshots].reverse().map((snapshot) => (
             <button
               key={snapshot.id}
               onClick={() => setSelectedSnapshotId(snapshot.id)}
-              className={`flex-1 flex flex-col items-center gap-1 group`}
+              className={`flex-1 min-w-[28px] sm:min-w-[36px] flex flex-col items-center gap-1 group`}
             >
               <div
                 className={`w-full rounded-t transition-colors ${
@@ -175,7 +177,7 @@ export default function IssuePage() {
                   minHeight: '4px',
                 }}
               />
-              <span className="text-xs text-gray-500">{formatDate(snapshot.date)}</span>
+              <span className="text-[10px] sm:text-xs text-gray-500">{formatDate(snapshot.date)}</span>
             </button>
           ))}
         </div>
@@ -183,18 +185,18 @@ export default function IssuePage() {
 
       {/* 선택된 날짜 정보 */}
       {selectedSnapshot && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 mb-3 sm:mb-4">
+            <h2 className="text-base sm:text-lg font-semibold">
               {formatFullDate(selectedSnapshot.date)}
             </h2>
-            <span className="text-sm text-amber-600 font-medium">
+            <span className="text-xs sm:text-sm text-amber-600 font-medium">
               기사 {selectedSnapshot.articleCount}개
             </span>
           </div>
 
           {selectedSnapshot.summary && (
-            <p className="text-gray-700 mb-4">{selectedSnapshot.summary}</p>
+            <p className="text-sm sm:text-base text-gray-700 mb-3 sm:mb-4">{selectedSnapshot.summary}</p>
           )}
 
           {/* 감성 점수 */}
@@ -252,11 +254,11 @@ export default function IssuePage() {
 
           {/* 비로그인 사용자 CTA */}
           {!isLoggedIn() && (
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-5 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="text-2xl">📬</div>
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4 sm:p-5 mb-4 sm:mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="text-xl sm:text-2xl">📬</div>
                 <div className="flex-1">
-                  <h3 className="font-medium text-gray-900 text-sm">
+                  <h3 className="font-medium text-gray-900 text-xs sm:text-sm">
                     이 이슈의 업데이트를 이메일로 받아보세요
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
@@ -265,7 +267,7 @@ export default function IssuePage() {
                 </div>
                 <Link
                   to="/register"
-                  className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                  className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-medium px-4 py-2 rounded-lg transition-colors text-center"
                 >
                   시작하기
                 </Link>
@@ -274,25 +276,25 @@ export default function IssuePage() {
           )}
 
           {/* 기사 목록 */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-gray-700">📰 관련 기사</h3>
+          <div className="space-y-2 sm:space-y-3">
+            <h3 className="text-xs sm:text-sm font-medium text-gray-700">📰 관련 기사</h3>
             {selectedSnapshot.articles.map((article) => (
               <a
                 key={article.id}
                 href={article.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                className="block p-2.5 sm:p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                <p className="font-medium text-gray-900 line-clamp-1">
+                <p className="font-medium text-gray-900 line-clamp-2 sm:line-clamp-1 text-sm sm:text-base">
                   {article.title}
                 </p>
                 {article.description && (
-                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                  <p className="text-xs sm:text-sm text-gray-600 mt-1 line-clamp-2">
                     {article.description}
                   </p>
                 )}
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-[10px] sm:text-xs text-gray-400 mt-1.5 sm:mt-2">
                   {article.press}
                   {article.publishedAt && ` · ${formatFullDate(article.publishedAt)}`}
                 </p>

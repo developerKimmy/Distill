@@ -203,7 +203,7 @@ export default function CalendarPage() {
   return (
     <div className="max-w-5xl mx-auto">
       {/* 배치 상태 */}
-      <div className="mb-6 flex items-center justify-between text-sm text-gray-500">
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs sm:text-sm text-gray-500 gap-1">
         <span>
           마지막 수집:{' '}
           {batchStatus?.lastRunAt
@@ -216,23 +216,23 @@ export default function CalendarPage() {
       {/* 캘린더 */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
           <button
             onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-            className="p-2 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 sm:p-2 hover:bg-gray-100 rounded transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900">
             {format(currentMonth, 'yyyy년 M월', { locale: ko })}
           </h2>
           <button
             onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-            className="p-2 hover:bg-gray-100 rounded transition-colors"
+            className="p-1.5 sm:p-2 hover:bg-gray-100 rounded transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
@@ -243,7 +243,7 @@ export default function CalendarPage() {
           {WEEKDAYS.map((day, i) => (
             <div
               key={day}
-              className={`py-3 text-center text-sm font-medium ${
+              className={`py-2 sm:py-3 text-center text-xs sm:text-sm font-medium ${
                 i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-700'
               }`}
             >
@@ -255,8 +255,8 @@ export default function CalendarPage() {
         {/* 주별 렌더링 */}
         {weeks.map((weekDays, weekIdx) => {
           const weekIssues = getWeekIssues(weekDays);
-          const issueRowHeight = 22;
-          const maxVisibleRows = 3; // 최대 3개 행까지 표시
+          const issueRowHeight = 18;
+          const maxVisibleRows = 2; // 모바일에서는 2개로 제한
 
           // 각 날짜별 숨겨진 이슈 계산
           const getHiddenIssuesForDate = (dayIdx: number) => {
@@ -266,7 +266,7 @@ export default function CalendarPage() {
           };
 
           return (
-            <div key={weekIdx} className="relative h-[120px]">
+            <div key={weekIdx} className="relative h-[80px] sm:h-[120px]">
               {/* 날짜 행 */}
               <div className="grid grid-cols-7 h-full">
                 {weekDays.map((date, dayIdx) => {
@@ -281,7 +281,7 @@ export default function CalendarPage() {
                       key={dayIdx}
                       onClick={() => isCurrentMonth && !disabled && handleDateClick(date)}
                       className={`
-                        relative border-b border-r border-gray-100 p-2 h-full
+                        relative border-b border-r border-gray-100 p-1 sm:p-2 h-full
                         ${dayIdx === 6 ? 'border-r-0' : ''}
                         ${isCurrentMonth ? '' : 'bg-gray-50'}
                         ${disabled ? 'bg-gray-50 cursor-default' : 'cursor-pointer hover:bg-gray-50'}
@@ -290,7 +290,7 @@ export default function CalendarPage() {
                       <div className="flex justify-end">
                         <span
                           className={`
-                            inline-flex items-center justify-center w-7 h-7 text-sm
+                            inline-flex items-center justify-center w-5 h-5 sm:w-7 sm:h-7 text-xs sm:text-sm
                             ${isToday ? 'bg-gray-900 text-white rounded-full font-semibold' : ''}
                             ${!isToday && disabled ? 'text-gray-300' : ''}
                             ${!isToday && !disabled && isCurrentMonth && dayOfWeek === 0 ? 'text-red-500' : ''}
@@ -314,9 +314,9 @@ export default function CalendarPage() {
                               position: { x: rect.left, y: rect.bottom + 4 },
                             });
                           }}
-                          className="absolute bottom-1 left-1 text-xs text-gray-500 hover:text-gray-700 hover:underline z-10"
+                          className="absolute bottom-0.5 sm:bottom-1 left-0.5 sm:left-1 text-[10px] sm:text-xs text-gray-500 hover:text-gray-700 hover:underline z-10"
                         >
-                          +{hiddenIssues.length} more
+                          +{hiddenIssues.length}
                         </button>
                       )}
                     </div>
@@ -326,8 +326,8 @@ export default function CalendarPage() {
 
               {/* 이슈 바 (절대 위치) */}
               <div
-                className="absolute left-0 right-0 pointer-events-none overflow-hidden"
-                style={{ top: '36px', height: `${maxVisibleRows * issueRowHeight}px` }}
+                className="absolute left-0 right-0 pointer-events-none overflow-hidden top-[24px] sm:top-[36px]"
+                style={{ height: `${maxVisibleRows * issueRowHeight}px` }}
               >
                 {weekIssues
                   .filter((wi) => wi.row < maxVisibleRows)
@@ -349,17 +349,17 @@ export default function CalendarPage() {
                         className={`
                           absolute pointer-events-auto cursor-pointer
                           ${colors.bg} ${colors.text}
-                          text-xs truncate px-2 py-0.5
+                          text-[10px] sm:text-xs truncate px-1 sm:px-2 py-0.5
                           hover:opacity-80 transition-opacity
                           ${wi.isStart ? 'rounded-l' : ''}
                           ${wi.isEnd ? 'rounded-r' : ''}
                         `}
                         style={{
-                          left: `calc(${leftPercent}% + 4px)`,
-                          width: `calc(${widthPercent}% - 8px)`,
+                          left: `calc(${leftPercent}% + 2px)`,
+                          width: `calc(${widthPercent}% - 4px)`,
                           top: `${wi.row * issueRowHeight}px`,
-                          height: '20px',
-                          lineHeight: '20px',
+                          height: '16px',
+                          lineHeight: '16px',
                         }}
                         title={wi.issue.name}
                       >

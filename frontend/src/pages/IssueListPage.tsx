@@ -217,21 +217,21 @@ export default function IssueListPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">이슈 목록</h1>
-        <p className="text-sm text-gray-500">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">이슈 목록</h1>
+        <p className="text-xs sm:text-sm text-gray-500">
           총 {data?.total || 0}개 이슈
         </p>
       </div>
 
       {/* 카테고리 범례 */}
-      <div className="flex items-center gap-5 text-sm text-gray-600">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-5 text-xs sm:text-sm text-gray-600">
         {Object.entries(categoryColors)
           .filter(([key]) => key !== '기타')
           .map(([category, colors]) => (
-            <span key={category} className="flex items-center gap-1.5">
-              <span className={`w-2.5 h-2.5 rounded-sm ${colors.dot}`}></span>
+            <span key={category} className="flex items-center gap-1">
+              <span className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-sm ${colors.dot}`}></span>
               {category}
             </span>
           ))}
