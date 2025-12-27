@@ -46,12 +46,28 @@ class IssueService:
         self.deduplicator = ArticleDeduplicator()
 
     async def _find_similar_issue(self, name: str, summary: str) -> tuple[Issue | None, float]:
-        """임베딩 기반으로 유사한 기존 이슈 찾기
+        """임베딩 + 이름 기반으로 유사한 기존 이슈 찾기
+
+        우선순위:
+        1. 정확히 같은 이름 → 즉시 반환
+        2. 임베딩 유사도 >= SIMILARITY_THRESHOLD → 반환
 
         Returns:
             (Issue, similarity) or (None, 0.0)
         """
-        # 새 이슈의 임베딩 생성
+        # 1. 정확히 같은 이름의 이슈가 있는지 먼저 확인
+        result = await self.db.execute(
+            select(Issue).where(
+                Issue.status == "active",
+                Issue.name == name
+            )
+        )
+        exact_match = result.scalar_one_or_none()
+        if exact_match:
+            print(f"[ISSUE]   Found exact name match: '{exact_match.name}'")
+            return exact_match, 1.0
+
+        # 2. 임베딩 기반 유사도 검색
         text_to_embed = f"{name}: {summary}"
         new_embedding = self.embedding_provider.embed(text_to_embed)
 

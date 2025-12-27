@@ -19,6 +19,8 @@ class BatchRun(Base, UUIDMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     issues_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 알림 전송 시간 (중복 방지용)
+    notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     issue_snapshots = relationship("IssueDailySnapshot", back_populates="batch_run", cascade="all, delete-orphan")

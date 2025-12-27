@@ -246,9 +246,12 @@ class EmailService:
             return False
 
         try:
-            # 배치 시간 기준 (없으면 현재 시간)
+            # 배치 시간 기준 (없으면 현재 시간), UTC → KST 변환
             reference_time = batch_time or datetime.now(KST)
-            if reference_time.tzinfo is None:
+            if reference_time.tzinfo is not None:
+                # UTC 등 다른 시간대면 KST로 변환
+                reference_time = reference_time.astimezone(KST)
+            else:
                 reference_time = reference_time.replace(tzinfo=KST)
             time_str = reference_time.strftime("%Y-%m-%d %H:%M")
 
@@ -345,9 +348,12 @@ class EmailService:
             return False
 
         try:
-            # 배치 시간 기준 (없으면 현재 시간)
+            # 배치 시간 기준 (없으면 현재 시간), UTC → KST 변환
             reference_time = batch_time or datetime.now(KST)
-            if reference_time.tzinfo is None:
+            if reference_time.tzinfo is not None:
+                # UTC 등 다른 시간대면 KST로 변환
+                reference_time = reference_time.astimezone(KST)
+            else:
                 reference_time = reference_time.replace(tzinfo=KST)
             time_str = reference_time.strftime("%Y-%m-%d %H:%M")
 

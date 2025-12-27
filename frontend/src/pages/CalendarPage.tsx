@@ -24,6 +24,12 @@ import { getIssuesForCalendar, getBatchDates, type CalendarIssue } from '../api/
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+// YYYY-MM-DD 문자열을 로컬 시간대로 파싱 (UTC 문제 방지)
+const parseLocalDate = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   정치: { bg: 'bg-rose-600', text: 'text-white' },
   경제: { bg: 'bg-amber-500', text: 'text-white' },
@@ -106,17 +112,17 @@ export default function CalendarPage() {
 
     // 이 주에 해당하는 이슈 필터링
     const weekIssues = issues.filter((issue) => {
-      const issueStart = startOfDay(new Date(issue.firstSeenAt));
-      const issueEnd = startOfDay(new Date(issue.lastSeenAt));
+      const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
+      const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
       return !isAfter(issueStart, weekEnd) && !isBefore(issueEnd, weekStart);
     });
 
     // 시작일 기준 정렬 (더 긴 이슈 우선)
     weekIssues.sort((a, b) => {
-      const aStart = new Date(a.firstSeenAt);
-      const bStart = new Date(b.firstSeenAt);
-      const aDuration = new Date(a.lastSeenAt).getTime() - aStart.getTime();
-      const bDuration = new Date(b.lastSeenAt).getTime() - bStart.getTime();
+      const aStart = parseLocalDate(a.firstSeenAt);
+      const bStart = parseLocalDate(b.firstSeenAt);
+      const aDuration = parseLocalDate(a.lastSeenAt).getTime() - aStart.getTime();
+      const bDuration = parseLocalDate(b.lastSeenAt).getTime() - bStart.getTime();
       if (aStart.getTime() !== bStart.getTime()) {
         return aStart.getTime() - bStart.getTime();
       }
@@ -124,8 +130,8 @@ export default function CalendarPage() {
     });
 
     weekIssues.forEach((issue) => {
-      const issueStart = startOfDay(new Date(issue.firstSeenAt));
-      const issueEnd = startOfDay(new Date(issue.lastSeenAt));
+      const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
+      const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
 
       // 이 주에서의 시작/끝 column 계산
       const visibleStart = max([issueStart, weekStart]);
