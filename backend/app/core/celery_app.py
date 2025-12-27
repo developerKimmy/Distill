@@ -34,10 +34,11 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=18, minute=0),
         "args": ("scheduled",)
     },
-    # 이메일 알림 체크 (매 30분)
+    # 이메일 알림 체크 (매 30분, :05/:35에 실행하여 배치와 충돌 방지)
+    # 배치 시간(06:00, 12:00, 18:00)에는 배치 완료 후 체이닝으로 호출됨
     "send-scheduled-notifications": {
         "task": "app.tasks.batch.send_scheduled_notifications",
-        "schedule": crontab(minute="0,30"),
+        "schedule": crontab(minute="5,35"),
     },
 }
 

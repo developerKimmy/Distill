@@ -3,7 +3,7 @@ import asyncio
 import time
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.core.celery_app import celery_app
 
@@ -28,6 +28,13 @@ def run_global_batch(self, triggered_by: str = "scheduled"):
     result = asyncio.run(_run_global_batch(triggered_by))
     duration = time.time() - start
     print(f"[TASK] Global batch completed in {duration:.2f}s")
+
+    # 배치 완료 후 알림 태스크 트리거 (DB 충돌 방지를 위해 체이닝)
+    if result.get("status") == "completed":
+        batch_time = datetime.now(KST).strftime("%H:%M")
+        print(f"[TASK] Triggering notifications for {batch_time}")
+        send_scheduled_notifications.delay(batch_time=batch_time)
+
     return result
 
 
@@ -45,18 +52,42 @@ async def _run_global_batch(triggered_by: str):
 
 
 @celery_app.task(bind=True, name="app.tasks.batch.send_scheduled_notifications")
-def send_scheduled_notifications(self):
-    """현재 시간에 알림 받을 유저들에게 이메일 발송 (동기 버전)"""
-    print(f"[TASK] Checking scheduled notifications...")
-    result = _send_scheduled_notifications_sync()
+def send_scheduled_notifications(self, batch_time: str | None = None):
+    """현재 시간에 알림 받을 유저들에게 이메일 발송 (동기 버전)
+
+    Args:
+        batch_time: 배치에서 트리거된 경우 배치 시작 시간 (HH:MM 형식)
+    """
+    print(f"[TASK] Checking scheduled notifications... (batch_time={batch_time})")
+    result = _send_scheduled_notifications_sync(batch_time=batch_time)
     print(f"[TASK] Notification check completed: {result}")
     return result
 
 
-def _send_scheduled_notifications_sync():
-    """동기 알림 발송 - Celery 태스크에서 안전하게 실행"""
-    current_time = datetime.now(KST).strftime("%H:%M")
-    print(f"[NOTIFICATION] Current time (KST): {current_time}")
+def _send_scheduled_notifications_sync(batch_time: str | None = None):
+    """동기 알림 발송 - Celery 태스크에서 안전하게 실행
+
+    Args:
+        batch_time: 배치에서 트리거된 경우 배치 시작 시간 (HH:MM 형식)
+    """
+    now = datetime.now(KST)
+
+    if batch_time:
+        # 배치에서 호출된 경우: 정확한 배치 시간만 체크
+        check_times = [batch_time]
+    else:
+        # 정기 스케줄(:05/:35)에서 호출된 경우: 직전 :00/:30 시간도 함께 체크
+        current_time = now.strftime("%H:%M")
+        minute = now.minute
+
+        check_times = [current_time]
+        # :05에 실행되면 :00도 체크, :35에 실행되면 :30도 체크
+        if minute == 5:
+            check_times.append(f"{now.hour:02d}:00")
+        elif minute == 35:
+            check_times.append(f"{now.hour:02d}:30")
+
+    print(f"[NOTIFICATION] Checking times: {check_times}")
 
     db = SessionLocal()
     try:
@@ -74,19 +105,22 @@ def _send_scheduled_notifications_sync():
 
         print(f"[NOTIFICATION] Found batch: {batch_run.id}, issues: {batch_run.issues_created}")
 
-        # 현재 시간에 알림 받을 유저 조회
+        # 체크 시간에 알림 받을 유저 조회
+        time_conditions = [
+            UserSettings.notification_times.contains(t) for t in check_times
+        ]
         users = db.execute(
             select(User)
             .join(UserSettings)
             .where(
                 UserSettings.email_notifications_enabled == True,
-                UserSettings.notification_times.contains(current_time)
+                or_(*time_conditions)
             )
         ).scalars().all()
 
         if not users:
-            print(f"[NOTIFICATION] No users to notify at {current_time}")
-            return {"sent_count": 0, "checked_at": current_time, "message": "No users to notify"}
+            print(f"[NOTIFICATION] No users to notify at {check_times}")
+            return {"sent_count": 0, "checked_at": check_times, "message": "No users to notify"}
 
         print(f"[NOTIFICATION] Found {len(users)} users to notify")
 
@@ -188,7 +222,7 @@ def _send_scheduled_notifications_sync():
 
         return {
             "sent_count": sent_count,
-            "checked_at": current_time,
+            "checked_at": check_times,
             "batch_run_id": str(batch_run.id)
         }
 
