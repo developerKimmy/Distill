@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from openai import OpenAI
 from app.core.config import settings
+from app.core.prompts import needs_extraction_prompt
 
 
 @dataclass
@@ -36,28 +37,7 @@ class NeedsProvider:
             for c in comments[:30]
         ])
 
-        prompt = f"""이슈: {issue_name}
-
-아래는 이 이슈 관련 YouTube 영상들의 인기 댓글입니다.
-
-{comments_text}
-
----
-
-이 댓글들을 분석해서:
-
-1. **니즈**: 사람들이 궁금해하는 것, 알고 싶어하는 것 (5~10개)
-   - 질문 형태로 정리 (예: "과징금 나오면 쿠팡 망하나?")
-
-2. **콘텐츠 방향**: 이 니즈를 해결할 블로그 글 주제 (3~5개)
-   - 구체적인 제목 형태로 (예: "쿠팡 해킹 과징금 전망과 주가 영향 분석")
-
-JSON 형식으로 응답:
-{{
-  "needs": ["니즈1", "니즈2", ...],
-  "content_directions": ["제목1", "제목2", ...]
-}}
-"""
+        prompt = needs_extraction_prompt(issue_name, comments_text)
 
         response = self.client.chat.completions.create(
             model=self.model,

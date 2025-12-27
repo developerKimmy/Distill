@@ -45,6 +45,11 @@ interface WeekIssue {
 export default function CalendarPage() {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [morePopup, setMorePopup] = useState<{
+    date: Date;
+    issues: CalendarIssue[];
+    position: { x: number; y: number };
+  } | null>(null);
   const today = startOfDay(new Date());
 
   const { data: batchStatus } = useQuery({
@@ -247,6 +252,13 @@ export default function CalendarPage() {
           const issueRowHeight = 22;
           const maxVisibleRows = 3; // 최대 3개 행까지 표시
 
+          // 각 날짜별 숨겨진 이슈 계산
+          const getHiddenIssuesForDate = (dayIdx: number) => {
+            return weekIssues
+              .filter((wi) => wi.startCol <= dayIdx && wi.endCol >= dayIdx && wi.row >= maxVisibleRows)
+              .map((wi) => wi.issue);
+          };
+
           return (
             <div key={weekIdx} className="relative h-[120px]">
               {/* 날짜 행 */}
@@ -256,13 +268,14 @@ export default function CalendarPage() {
                   const isToday = isSameDay(date, today);
                   const disabled = isDisabled(date);
                   const dayOfWeek = date.getDay();
+                  const hiddenIssues = getHiddenIssuesForDate(dayIdx);
 
                   return (
                     <div
                       key={dayIdx}
                       onClick={() => isCurrentMonth && !disabled && handleDateClick(date)}
                       className={`
-                        border-b border-r border-gray-100 p-2 h-full
+                        relative border-b border-r border-gray-100 p-2 h-full
                         ${dayIdx === 6 ? 'border-r-0' : ''}
                         ${isCurrentMonth ? '' : 'bg-gray-50'}
                         ${disabled ? 'bg-gray-50 cursor-default' : 'cursor-pointer hover:bg-gray-50'}
@@ -283,6 +296,23 @@ export default function CalendarPage() {
                           {format(date, 'd')}
                         </span>
                       </div>
+                      {/* 날짜별 +N more 버튼 */}
+                      {hiddenIssues.length > 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setMorePopup({
+                              date,
+                              issues: hiddenIssues,
+                              position: { x: rect.left, y: rect.bottom + 4 },
+                            });
+                          }}
+                          className="absolute bottom-1 left-1 text-xs text-gray-500 hover:text-gray-700 hover:underline z-10"
+                        >
+                          +{hiddenIssues.length} more
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -337,6 +367,65 @@ export default function CalendarPage() {
         })}
       </div>
 
+      {/* More 팝업 */}
+      {morePopup && (
+        <>
+          {/* 배경 오버레이 */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMorePopup(null)}
+          />
+          {/* 팝업 */}
+          <div
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs"
+            style={{
+              left: Math.min(morePopup.position.x, window.innerWidth - 300),
+              top: morePopup.position.y,
+              maxHeight: '300px',
+              overflowY: 'auto',
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-700">
+                {format(morePopup.date, 'M월 d일', { locale: ko })} (+{morePopup.issues.length})
+              </span>
+              <button
+                onClick={() => setMorePopup(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {morePopup.issues.map((issue) => {
+                const colors = CATEGORY_COLORS[issue.category || ''] || {
+                  bg: 'bg-gray-500',
+                  text: 'text-white',
+                };
+                return (
+                  <div
+                    key={issue.id}
+                    onClick={() => {
+                      setMorePopup(null);
+                      navigate(`/issues/${issue.id}`);
+                    }}
+                    className={`
+                      ${colors.bg} ${colors.text}
+                      text-xs px-2 py-1.5 rounded cursor-pointer
+                      hover:opacity-80 transition-opacity truncate
+                    `}
+                    title={issue.name}
+                  >
+                    {issue.name}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import requests
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
 
@@ -12,7 +14,7 @@ class NewsItem:
     url: str
     press: str
     description: str | None = None
-    published_at: str | None = None
+    published_at: datetime | None = None
 
 
 class NaverNewsProvider:
@@ -83,12 +85,20 @@ class NaverNewsProvider:
             title = BeautifulSoup(item["title"], "html.parser").get_text()
             description = BeautifulSoup(item["description"], "html.parser").get_text()
 
+            # pubDate 파싱 (RFC 822 형식: "Mon, 01 Jan 2024 12:00:00 +0900")
+            pub_date = None
+            if item.get("pubDate"):
+                try:
+                    pub_date = parsedate_to_datetime(item["pubDate"])
+                except Exception:
+                    pass
+
             news_list.append(NewsItem(
                 title=title,
                 url=item["link"],
                 press="",
                 description=description,
-                published_at=item.get("pubDate")
+                published_at=pub_date
             ))
 
         return news_list

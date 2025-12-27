@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from openai import OpenAI
 from app.core.config import settings
+from app.core.prompts import keyword_extraction_prompt
 
 
 @dataclass
@@ -32,28 +33,7 @@ class KeywordProvider:
             for a in articles if a.get('description')
         ])
 
-        prompt = f"""이슈: {issue_name}
-
-아래는 이 이슈 관련 기사들입니다.
-
-{articles_text}
-
----
-
-이 기사들에서 블로그 콘텐츠 작성에 활용할 수 있는 구체적인 키워드를 추출해주세요.
-
-규칙:
-1. 구체적인 수치/금액이 포함된 키워드 (예: "과징금 1500억", "3370만건 유출")
-2. 비교 대상 (예: "SKT 해킹 비교")
-3. 후속 이슈 (예: "집단소송", "주가 전망")
-4. 관련 인물/기관 (예: "개인정보보호위원회")
-5. 5~10개 추출
-
-JSON 형식으로 응답:
-{{
-  "keywords": ["키워드1", "키워드2", ...]
-}}
-"""
+        prompt = keyword_extraction_prompt(issue_name, articles_text)
 
         response = self.client.chat.completions.create(
             model=self.model,

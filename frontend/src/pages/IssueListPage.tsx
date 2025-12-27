@@ -1,14 +1,71 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { getIssues } from '../api/issues';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getIssues, followIssue, unfollowIssue } from '../api/issues';
+import { isLoggedIn } from '../utils/categories';
 import type { Issue } from '../types';
 
 export default function IssueListPage() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const loggedIn = isLoggedIn();
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['issues', 1, 100],
     queryFn: () => getIssues(1, 100),
   });
+
+  const followMutation = useMutation({
+    mutationFn: (issueId: string) => followIssue(issueId),
+    onMutate: async (issueId) => {
+      await queryClient.cancelQueries({ queryKey: ['issues', 1, 100] });
+      const previous = queryClient.getQueryData(['issues', 1, 100]);
+      queryClient.setQueryData(['issues', 1, 100], (old: any) => ({
+        ...old,
+        items: old?.items?.map((issue: Issue) =>
+          issue.id === issueId ? { ...issue, isFollowing: true } : issue
+        ),
+      }));
+      return { previous };
+    },
+    onError: (_err, _issueId, context) => {
+      queryClient.setQueryData(['issues', 1, 100], context?.previous);
+    },
+  });
+
+  const unfollowMutation = useMutation({
+    mutationFn: (issueId: string) => unfollowIssue(issueId),
+    onMutate: async (issueId) => {
+      await queryClient.cancelQueries({ queryKey: ['issues', 1, 100] });
+      const previous = queryClient.getQueryData(['issues', 1, 100]);
+      queryClient.setQueryData(['issues', 1, 100], (old: any) => ({
+        ...old,
+        items: old?.items?.map((issue: Issue) =>
+          issue.id === issueId ? { ...issue, isFollowing: false } : issue
+        ),
+      }));
+      return { previous };
+    },
+    onError: (_err, _issueId, context) => {
+      queryClient.setQueryData(['issues', 1, 100], context?.previous);
+    },
+  });
+
+  const handleFollowClick = (e: React.MouseEvent, issue: Issue) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!loggedIn) {
+      navigate('/register');
+      return;
+    }
+
+    if (issue.isFollowing) {
+      unfollowMutation.mutate(issue.id);
+    } else {
+      followMutation.mutate(issue.id);
+    }
+  };
 
   // 콘텐츠/뉴스 분리 및 카테고리별 그룹핑
   const { contentsByCategory, newsByCategory } = useMemo(() => {
@@ -81,7 +138,7 @@ export default function IssueListPage() {
       to={`/issues/${issue.id}`}
       className="block bg-white rounded-lg border border-gray-200 p-4 hover:border-amber-300 transition-colors"
     >
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <h3 className="font-medium text-gray-900 truncate">{issue.name}</h3>
           <p className="text-sm text-gray-500 mt-1">
@@ -89,11 +146,28 @@ export default function IssueListPage() {
             <span className="ml-2">({issue.totalSnapshots}일)</span>
           </p>
         </div>
-        {issue.latestArticleCount && (
-          <span className="ml-4 text-sm text-amber-600 font-medium whitespace-nowrap">
-            기사 {issue.latestArticleCount}개
-          </span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {issue.latestArticleCount && (
+            <span className="text-sm text-amber-600 font-medium whitespace-nowrap">
+              기사 {issue.latestArticleCount}개
+            </span>
+          )}
+          <button
+            onClick={(e) => handleFollowClick(e, issue)}
+            className={`
+              p-1.5 rounded-full transition-colors
+              ${issue.isFollowing
+                ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
+                : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
+              }
+            `}
+            title={issue.isFollowing ? '팔로우 중' : '팔로우'}
+          >
+            <svg className="w-4 h-4" fill={issue.isFollowing ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+          </button>
+        </div>
       </div>
     </Link>
   );

@@ -30,20 +30,21 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/auth/magic" element={<MagicLinkPage />} />
 
-          {/* 인증 필요 라우트 */}
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <Layout />
-              </PrivateRoute>
-            }
-          >
+          {/* 메인 콘텐츠 - 비로그인 허용 */}
+          <Route path="/" element={<Layout />}>
             <Route index element={<CalendarPage />} />
             <Route path="report/:date" element={<ReportPage />} />
             <Route path="issues" element={<IssueListPage />} />
             <Route path="issues/:issueId" element={<IssuePage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            {/* 설정 페이지만 로그인 필요 */}
+            <Route
+              path="settings"
+              element={
+                <PrivateRoute>
+                  <SettingsPage />
+                </PrivateRoute>
+              }
+            />
           </Route>
         </Routes>
       </BrowserRouter>

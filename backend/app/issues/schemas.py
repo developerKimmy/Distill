@@ -64,6 +64,7 @@ class IssueListItem(IssueResponse):
     latest_article_count: int | None = None
     latest_sentiment_score: float | None = None
     has_content: bool = False
+    is_following: bool = False
 
 
 # 이슈 목록 응답
@@ -77,6 +78,7 @@ class IssueListResponse(BaseSchema):
 # 이슈 상세 (스냅샷 히스토리 포함)
 class IssueDetailResponse(IssueResponse):
     snapshots: list[IssueDailySnapshotDetailResponse]
+    is_following: bool = False
 
 
 # 일간 리포트용 스냅샷 (이슈 정보 포함)

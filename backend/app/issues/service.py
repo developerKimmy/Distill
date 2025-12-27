@@ -1,4 +1,5 @@
 import time
+import numpy as np
 from uuid import UUID
 from datetime import date, datetime, timezone, timedelta
 from sqlalchemy import select, func
@@ -8,8 +9,11 @@ from sqlalchemy.orm import selectinload
 # 한국 시간대 (UTC+9)
 KST = timezone(timedelta(hours=9))
 
+# 임베딩 유사도 임계값 (높을수록 엄격하게 매칭, 새 이슈 생성 증가)
+SIMILARITY_THRESHOLD = 0.92
+
 from app.issues.models import (
-    Issue, IssueDailySnapshot, IssueArticle, IssueKeyword, IssueEmbedding
+    Issue, IssueDailySnapshot, IssueArticle, IssueKeyword, IssueEmbedding, IssueFollow
 )
 from app.insights.models import IssueInsight
 from app.core.agent.tools import (
@@ -18,6 +22,13 @@ from app.core.agent.tools import (
 )
 from app.content.service import ContentService
 from app.common.utils import ArticleDeduplicator, PipelineResult
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """코사인 유사도 계산"""
+    a_np = np.array(a)
+    b_np = np.array(b)
+    return float(np.dot(a_np, b_np) / (np.linalg.norm(a_np) * np.linalg.norm(b_np)))
 
 
 class IssueService:
@@ -33,6 +44,41 @@ class IssueService:
         self.embedding_provider = EmbeddingProvider()
         self.content_service = ContentService(db)
         self.deduplicator = ArticleDeduplicator()
+
+    async def _find_similar_issue(self, name: str, summary: str) -> tuple[Issue | None, float]:
+        """임베딩 기반으로 유사한 기존 이슈 찾기
+
+        Returns:
+            (Issue, similarity) or (None, 0.0)
+        """
+        # 새 이슈의 임베딩 생성
+        text_to_embed = f"{name}: {summary}"
+        new_embedding = self.embedding_provider.embed(text_to_embed)
+
+        # 활성 이슈 중 임베딩이 있는 것들 조회
+        result = await self.db.execute(
+            select(Issue).where(
+                Issue.status == "active",
+                Issue.name_embedding.isnot(None)
+            )
+        )
+        active_issues = result.scalars().all()
+
+        best_match = None
+        best_similarity = 0.0
+
+        for issue in active_issues:
+            similarity = cosine_similarity(new_embedding, list(issue.name_embedding))
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = issue
+
+        # 임계값 이상이면 반환
+        if best_similarity >= SIMILARITY_THRESHOLD:
+            print(f"[ISSUE]   Found similar issue: '{best_match.name}' (similarity: {best_similarity:.3f})")
+            return best_match, best_similarity
+
+        return None, best_similarity
 
     async def collect_issues(self, batch_run_id: UUID | None = None) -> list[Issue]:
         """이슈 수집 파이프라인
@@ -92,16 +138,18 @@ class IssueService:
             print(f"[ISSUE] --- Processing issue {idx+1}/{len(clustered)}: {item.name} (type: {item.issue_type}) ---")
 
             try:
-                # 기존 이슈 찾기 (이름으로 매칭)
-                result = await self.db.execute(
-                    select(Issue).where(Issue.name == item.name)
-                )
-                existing_issue = result.scalar_one_or_none()
+                # 임베딩 기반 유사 이슈 찾기
+                existing_issue, similarity = await self._find_similar_issue(item.name, item.summary)
+
+                # 새 이슈의 임베딩 생성 (저장용)
+                text_to_embed = f"{item.name}: {item.summary}"
+                new_embedding = self.embedding_provider.embed(text_to_embed)
 
                 if existing_issue:
                     issue = existing_issue
                     issue.last_seen_at = today
                     issue.total_snapshots += 1
+                    print(f"[ISSUE]   Matched to existing issue: '{issue.name}' (similarity: {similarity:.3f})")
                 else:
                     issue = Issue(
                         name=item.name,
@@ -109,10 +157,12 @@ class IssueService:
                         first_seen_at=today,
                         last_seen_at=today,
                         total_snapshots=1,
-                        status="active"
+                        status="active",
+                        name_embedding=new_embedding  # 임베딩 저장
                     )
                     self.db.add(issue)
                     await self.db.flush()
+                    print(f"[ISSUE]   Created new issue: '{item.name}'")
 
                 # 일간 스냅샷 생성
                 snapshot = IssueDailySnapshot(
@@ -133,6 +183,7 @@ class IssueService:
 
                 article_dicts = []
                 saved_count = 0
+                earliest_pub_date = None  # 가장 이른 pub_date 추적
                 for article in articles:
                     # 중복 체크
                     if self.deduplicator.is_duplicate(article.url, article.title, article.description or ""):
@@ -145,7 +196,7 @@ class IssueService:
                         description=article.description,
                         url=article.url,
                         press=article.press,
-                        published_at=None
+                        published_at=article.published_at
                     )
                     self.db.add(issue_article)
                     article_dicts.append({
@@ -154,6 +205,17 @@ class IssueService:
                         "url": article.url
                     })
                     saved_count += 1
+
+                    # 가장 이른 pub_date 추적
+                    if article.published_at:
+                        pub_date = article.published_at.date() if hasattr(article.published_at, 'date') else article.published_at
+                        if earliest_pub_date is None or pub_date < earliest_pub_date:
+                            earliest_pub_date = pub_date
+
+                # first_seen_at 갱신 (더 이른 날짜가 발견된 경우)
+                if earliest_pub_date and earliest_pub_date < issue.first_seen_at:
+                    print(f"[ISSUE]   Updating first_seen_at: {issue.first_seen_at} -> {earliest_pub_date}")
+                    issue.first_seen_at = earliest_pub_date
 
                 print(f"[ISSUE]   Step 4 completed: {saved_count}/{len(articles)} articles (중복 제거) in {time.time() - step_start:.2f}s")
 
@@ -274,7 +336,7 @@ class IssueService:
                         description=article.description,
                         url=article.url,
                         press=article.press,
-                        published_at=None
+                        published_at=article.published_at
                     )
                     self.db.add(issue_article)
                     existing_urls.add(article.url)
@@ -473,4 +535,59 @@ class IssueService:
         stmt = stmt.distinct().order_by(IssueDailySnapshot.date)
 
         result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    # ========== 팔로우 관련 메서드 ==========
+
+    async def follow_issue(self, user_id: UUID, issue_id: UUID) -> IssueFollow:
+        """이슈 팔로우"""
+        # 이미 팔로우 중인지 확인
+        existing = await self.db.execute(
+            select(IssueFollow).where(
+                IssueFollow.user_id == user_id,
+                IssueFollow.issue_id == issue_id
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise ValueError("이미 팔로우 중인 이슈입니다")
+
+        follow = IssueFollow(user_id=user_id, issue_id=issue_id)
+        self.db.add(follow)
+        await self.db.commit()
+        return follow
+
+    async def unfollow_issue(self, user_id: UUID, issue_id: UUID) -> bool:
+        """이슈 언팔로우"""
+        result = await self.db.execute(
+            select(IssueFollow).where(
+                IssueFollow.user_id == user_id,
+                IssueFollow.issue_id == issue_id
+            )
+        )
+        follow = result.scalar_one_or_none()
+        if not follow:
+            return False
+
+        await self.db.delete(follow)
+        await self.db.commit()
+        return True
+
+    async def is_following(self, user_id: UUID, issue_id: UUID) -> bool:
+        """팔로우 여부 확인"""
+        result = await self.db.execute(
+            select(IssueFollow).where(
+                IssueFollow.user_id == user_id,
+                IssueFollow.issue_id == issue_id
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def get_followed_issues(self, user_id: UUID) -> list[Issue]:
+        """팔로우한 이슈 목록 조회"""
+        result = await self.db.execute(
+            select(Issue)
+            .join(IssueFollow)
+            .where(IssueFollow.user_id == user_id)
+            .order_by(IssueFollow.created_at.desc())
+        )
         return list(result.scalars().all())

@@ -1,18 +1,68 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
-import { getIssue } from '../api/issues';
+import { getIssue, followIssue, unfollowIssue } from '../api/issues';
+import { isLoggedIn } from '../utils/categories';
 
 export default function IssuePage() {
   const { issueId } = useParams<{ issueId: string }>();
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const loggedIn = isLoggedIn();
 
   const { data: issue, isLoading, error } = useQuery({
     queryKey: ['issue', issueId],
     queryFn: () => getIssue(issueId!),
     enabled: !!issueId,
   });
+
+  const followMutation = useMutation({
+    mutationFn: () => followIssue(issueId!),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['issue', issueId] });
+      const previous = queryClient.getQueryData(['issue', issueId]);
+      queryClient.setQueryData(['issue', issueId], (old: any) => ({
+        ...old,
+        isFollowing: true,
+      }));
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      queryClient.setQueryData(['issue', issueId], context?.previous);
+    },
+  });
+
+  const unfollowMutation = useMutation({
+    mutationFn: () => unfollowIssue(issueId!),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['issue', issueId] });
+      const previous = queryClient.getQueryData(['issue', issueId]);
+      queryClient.setQueryData(['issue', issueId], (old: any) => ({
+        ...old,
+        isFollowing: false,
+      }));
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      queryClient.setQueryData(['issue', issueId], context?.previous);
+    },
+  });
+
+  const handleFollowToggle = () => {
+    if (!loggedIn) {
+      navigate('/register');
+      return;
+    }
+    if (issue?.isFollowing) {
+      unfollowMutation.mutate();
+    } else {
+      followMutation.mutate();
+    }
+  };
+
+  const isFollowLoading = followMutation.isPending || unfollowMutation.isPending;
 
   if (isLoading) {
     return (
@@ -72,6 +122,35 @@ export default function IssuePage() {
               <span className="ml-2">({issue.totalSnapshots}일간 추적)</span>
             </p>
           </div>
+          {/* 팔로우 버튼 */}
+          <button
+            onClick={handleFollowToggle}
+            disabled={isFollowLoading}
+            className={`
+              shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              ${issue.isFollowing
+                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                : 'bg-amber-500 text-white hover:bg-amber-600'
+              }
+              disabled:opacity-50
+            `}
+          >
+            {issue.isFollowing ? (
+              <>
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                </svg>
+                팔로우 중
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                팔로우
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -168,6 +247,29 @@ export default function IssuePage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* 비로그인 사용자 CTA */}
+          {!isLoggedIn() && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-5 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="text-2xl">📬</div>
+                <div className="flex-1">
+                  <h3 className="font-medium text-gray-900 text-sm">
+                    이 이슈의 업데이트를 이메일로 받아보세요
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    관심 이슈를 팔로우하고 새 소식을 받아볼 수 있어요.
+                  </p>
+                </div>
+                <Link
+                  to="/register"
+                  className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  시작하기
+                </Link>
+              </div>
             </div>
           )}
 

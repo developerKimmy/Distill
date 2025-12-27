@@ -1,9 +1,12 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.batch.models import BatchRun
+
+# 한국 시간대 (UTC+9)
+KST = timezone(timedelta(hours=9))
 from app.issues.service import IssueService
 from app.core.config import settings
 
@@ -45,7 +48,7 @@ class GlobalBatchService:
         batch_run = BatchRun(
             status="started",
             triggered_by=triggered_by,
-            started_at=datetime.utcnow()
+            started_at=datetime.now(KST)
         )
         self.db.add(batch_run)
         await self.db.commit()
@@ -58,13 +61,13 @@ class GlobalBatchService:
             print(f"[SERVICE] Issue collection completed, {len(issues)} issues created")
 
             batch_run.status = "completed"
-            batch_run.completed_at = datetime.utcnow()
+            batch_run.completed_at = datetime.now(KST)
             batch_run.issues_created = len(issues)
 
         except Exception as e:
             print(f"[SERVICE] Error during batch run: {e}")
             batch_run.status = "failed"
-            batch_run.completed_at = datetime.utcnow()
+            batch_run.completed_at = datetime.now(KST)
             batch_run.error_message = str(e)
 
         await self.db.commit()

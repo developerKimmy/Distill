@@ -15,7 +15,7 @@ from app.batch.service import GlobalBatchService
 from app.batch.models import BatchRun
 from app.settings.models import UserSettings
 from app.auth.models import User
-from app.issues.models import Issue, IssueDailySnapshot
+from app.issues.models import Issue, IssueDailySnapshot, IssueFollow
 from app.common.utils import EmailService
 from app.auth.magic_link import get_magic_link_url
 
@@ -122,15 +122,42 @@ def _send_scheduled_notifications_sync():
 
                     rows = db.execute(stmt).all()
                     issues = []
+                    category_issue_ids = set()
                     for issue, snapshot in rows:
                         issues.append({
                             "name": issue.name,
                             "category": issue.category,
                             "summary": snapshot.summary,
-                            "article_count": snapshot.article_count
+                            "article_count": snapshot.article_count,
+                            "is_followed": False
                         })
+                        category_issue_ids.add(issue.id)
 
-                    print(f"[NOTIFICATION] Found {len(issues)} issues for {user.email}")
+                    # 팔로우한 이슈도 추가 (카테고리 필터에 없는 것들)
+                    followed_stmt = (
+                        select(Issue, IssueDailySnapshot)
+                        .join(IssueDailySnapshot, Issue.id == IssueDailySnapshot.issue_id)
+                        .join(IssueFollow, Issue.id == IssueFollow.issue_id)
+                        .where(
+                            IssueDailySnapshot.batch_run_id == batch_run.id,
+                            IssueFollow.user_id == user.id
+                        )
+                        .order_by(IssueDailySnapshot.article_count.desc())
+                    )
+                    followed_rows = db.execute(followed_stmt).all()
+                    followed_count = 0
+                    for issue, snapshot in followed_rows:
+                        if issue.id not in category_issue_ids:
+                            issues.append({
+                                "name": issue.name,
+                                "category": issue.category,
+                                "summary": snapshot.summary,
+                                "article_count": snapshot.article_count,
+                                "is_followed": True
+                            })
+                            followed_count += 1
+
+                    print(f"[NOTIFICATION] Found {len(issues)} issues for {user.email} ({followed_count} followed)")
 
                     if issues:
                         # 매직 링크 생성

@@ -10,6 +10,7 @@ export interface Issue {
   latestArticleCount?: number | null;
   latestSentimentScore?: number | null;
   hasContent?: boolean;
+  isFollowing?: boolean;
 }
 
 // 일간 스냅샷
@@ -57,6 +58,7 @@ export interface IssueDetail extends Issue {
     articles: IssueArticle[];
     contents: IssueContent[];
   })[];
+  isFollowing: boolean;
 }
 
 // 글로벌 배치 상태

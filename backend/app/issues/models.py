@@ -19,8 +19,12 @@ class Issue(Base, UUIDMixin, TimestampMixin):
     total_snapshots: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
+    # 이슈 매칭용 임베딩 (이슈명 + 요약 기반)
+    name_embedding = mapped_column(Vector(384), nullable=True)
+
     # Relationships
     snapshots = relationship("IssueDailySnapshot", back_populates="issue", cascade="all, delete-orphan")
+    followers = relationship("IssueFollow", back_populates="issue", cascade="all, delete-orphan")
 
 
 class IssueDailySnapshot(Base, UUIDMixin):
@@ -144,3 +148,28 @@ class IssueContent(Base, UUIDMixin):
 
     # Relationships
     snapshot = relationship("IssueDailySnapshot", back_populates="contents")
+
+
+class IssueFollow(Base, UUIDMixin):
+    """이슈 팔로우"""
+    __tablename__ = "issue_follows"
+
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False
+    )
+    issue_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issues.id"),
+        nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="followed_issues")
+    issue = relationship("Issue", back_populates="followers")

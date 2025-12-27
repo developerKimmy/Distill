@@ -19,8 +19,8 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      // 토큰 만료시 제거만 하고, 리다이렉트는 하지 않음 (비로그인 허용)
       localStorage.removeItem('access_token');
-      window.location.href = '/login';
     }
     return Promise.reject(error);
   }

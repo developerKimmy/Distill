@@ -10,6 +10,7 @@ from app.issues.models import (
 )
 from app.core.agent.tools import EmbeddingProvider, NaverNewsProvider
 from app.core.config import settings
+from app.core.prompts import title_generation_prompt, content_generation_prompt
 
 
 class ContentService:
@@ -253,14 +254,7 @@ class ContentService:
             return content_directions[0]
 
         if needs:
-            prompt = f"""이슈: {issue_name}
-사람들이 궁금해하는 것: {', '.join(needs[:3])}
-
-위 내용을 바탕으로 블로그 제목을 하나만 생성해주세요.
-- 클릭하고 싶게 만드는 제목
-- 30자 내외
-- 제목만 출력 (다른 설명 없이)
-"""
+            prompt = title_generation_prompt(issue_name, needs)
             response = self.llm.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
@@ -280,62 +274,27 @@ class ContentService:
         similar_contents: list[dict]
     ) -> str:
         """LLM으로 블로그 콘텐츠 생성"""
+        from datetime import datetime, timezone, timedelta
+        KST = timezone(timedelta(hours=9))
 
         articles_text = "\n\n".join([
             f"제목: {a['title']}\n내용: {a.get('description', '없음')}\n출처: {a['url']}"
             for a in articles[:10]
         ])
-
-        similar_text = "\n".join([
-            f"- {c['content']}"
-            for c in similar_contents
-        ])
-
+        similar_text = "\n".join([f"- {c['content']}" for c in similar_contents])
         needs_text = "\n".join([f"- {n}" for n in needs]) if needs else "없음"
         directions_text = "\n".join([f"- {d}" for d in content_directions]) if content_directions else "없음"
-
-        from datetime import datetime, timezone, timedelta
-        KST = timezone(timedelta(hours=9))
         today_str = datetime.now(KST).strftime("%Y년 %m월 %d일")
 
-        prompt = f"""이슈: {issue_name}
-기준일자: {today_str}
-
-## 참고 기사
-{articles_text}
-
-## 관련 키워드
-{', '.join(keywords) if keywords else '없음'}
-
-## 사람들이 궁금해하는 것 (니즈)
-{needs_text}
-
-## 추천 콘텐츠 방향
-{directions_text}
-
-## 관련 데이터
-{similar_text}
-
----
-
-위 정보를 바탕으로 블로그 글을 작성해주세요.
-
-규칙:
-1. 반드시 위 기사 내용에 있는 팩트만 사용하세요
-2. 기사에 없는 수치나 정보는 절대 추측하지 마세요
-3. 사람들이 궁금해하는 것(니즈)에 답하는 형태로 작성하세요
-4. 확인되지 않은 정보는 "[미확인]" 태그를 붙여주세요
-5. 마크다운 형식으로 작성하세요
-6. 1500~2000자 내외로 작성하세요
-
-진행형 사건 처리 규칙:
-7. 수사/재판/협상 등 진행 중인 사건은 "현재 진행 중"임을 명시하세요
-8. 후속 전개가 예상되는 경우 "향후 ~가 예정되어 있다" 등으로 표시하세요
-9. 기사 발행일 기준으로 "~일 기준" 또는 "~시점 기준"을 명확히 표시하세요
-10. 결론이 나지 않은 사안은 단정짓지 말고 "~할 전망이다", "~가 주목된다" 등으로 마무리하세요
-
-블로그 글:
-"""
+        prompt = content_generation_prompt(
+            issue_name=issue_name,
+            today_str=today_str,
+            articles_text=articles_text,
+            keywords=keywords,
+            needs_text=needs_text,
+            directions_text=directions_text,
+            similar_text=similar_text
+        )
 
         response = self.llm.chat.completions.create(
             model="deepseek-chat",

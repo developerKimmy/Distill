@@ -18,32 +18,35 @@ from app.issues.schemas import (
     CalendarIssueResponse,
 )
 from app.auth.models import User
-from app.auth.router import current_active_user
-from app.settings.service import UserSettingsService
+from app.auth.router import fastapi_users
 
 router = APIRouter(prefix="/issues", tags=["issues"])
 
+# 선택적 인증 (비로그인도 허용)
+optional_current_user = fastapi_users.current_user(active=True, optional=True)
+# 필수 인증
+current_active_user = fastapi_users.current_user(active=True)
 
-async def get_user_categories(
-    db: AsyncSession,
-    user: User
-) -> list[str] | None:
-    """유저의 카테고리 설정 조회 (빈 리스트면 None 반환)"""
-    settings_service = UserSettingsService(db)
-    settings = await settings_service.get_notification_settings(user.id)
-    categories = settings.get("categories", [])
-    return categories if categories else None
+
+def get_categories_from_query(category_param: str | None) -> list[str] | None:
+    """카테고리 필터: 항상 쿼리 파라미터 사용 (헤더 필터 = 화면 조절)
+
+    Note: 설정 페이지의 카테고리는 이메일 알림용으로만 사용
+    """
+    if category_param:
+        return [c.strip() for c in category_param.split(",") if c.strip()]
+    return None
 
 
 @router.get("/calendar", response_model=list[CalendarIssueResponse])
 async def list_issues_for_calendar(
+        categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
-        user: User = Depends(current_active_user)
 ):
-    """달력용 경량 이슈 목록 (빠른 응답)"""
-    categories = await get_user_categories(db, user)
+    """달력용 경량 이슈 목록 (빠른 응답) - 비로그인 허용"""
+    category_list = get_categories_from_query(categories)
     service = IssueService(db)
-    issues = await service.list_issues_for_calendar(categories=categories)
+    issues = await service.list_issues_for_calendar(categories=category_list)
 
     return [
         CalendarIssueResponse(
@@ -61,12 +64,20 @@ async def list_issues_for_calendar(
 async def list_issues(
         page: int = Query(1, ge=1),
         size: int = Query(20, ge=1, le=100),
+        categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
-        user: User = Depends(current_active_user)
+        user: User | None = Depends(optional_current_user)
 ):
-    """이슈 목록 조회 (전체)"""
+    """이슈 목록 조회 - 비로그인 허용"""
+    category_list = get_categories_from_query(categories)
     service = IssueService(db)
-    issues, total = await service.list_issues(page=page, size=size)
+    issues, total = await service.list_issues(page=page, size=size, categories=category_list)
+
+    # 로그인한 사용자의 팔로우한 이슈 ID 목록 조회
+    followed_issue_ids = set()
+    if user:
+        followed_issues = await service.get_followed_issues(user.id)
+        followed_issue_ids = {issue.id for issue in followed_issues}
 
     items = []
     for issue in issues:
@@ -89,6 +100,7 @@ async def list_issues(
             latest_article_count=latest_snapshot.article_count if latest_snapshot else None,
             latest_sentiment_score=latest_snapshot.sentiment_score if latest_snapshot else None,
             has_content=has_content,
+            is_following=issue.id in followed_issue_ids,
         ))
 
     return IssueListResponse(
@@ -102,7 +114,8 @@ async def list_issues(
 @router.get("/{issue_id}", response_model=IssueDetailResponse)
 async def get_issue(
         issue_id: UUID,
-        db: AsyncSession = Depends(get_async_session)
+        db: AsyncSession = Depends(get_async_session),
+        user: User | None = Depends(optional_current_user)
 ):
     """이슈 상세 조회 (스냅샷 히스토리 포함)"""
     service = IssueService(db)
@@ -110,6 +123,11 @@ async def get_issue(
 
     if not issue:
         raise HTTPException(status_code=404, detail="이슈를 찾을 수 없습니다")
+
+    # 로그인 사용자의 경우 팔로우 여부 확인
+    is_following = False
+    if user:
+        is_following = await service.is_following(user.id, issue_id)
 
     return IssueDetailResponse(
         id=str(issue.id),
@@ -119,6 +137,7 @@ async def get_issue(
         last_seen_at=issue.last_seen_at,
         total_snapshots=issue.total_snapshots,
         status=issue.status,
+        is_following=is_following,
         snapshots=[
             IssueDailySnapshotDetailResponse(
                 id=str(snapshot.id),
@@ -154,6 +173,43 @@ async def get_issue(
     )
 
 
+@router.post("/{issue_id}/follow")
+async def follow_issue(
+        issue_id: UUID,
+        db: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
+):
+    """이슈 팔로우"""
+    service = IssueService(db)
+
+    # 이슈 존재 확인
+    issue = await service.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="이슈를 찾을 수 없습니다")
+
+    try:
+        await service.follow_issue(user.id, issue_id)
+        return {"message": "팔로우 완료", "is_following": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/{issue_id}/follow")
+async def unfollow_issue(
+        issue_id: UUID,
+        db: AsyncSession = Depends(get_async_session),
+        user: User = Depends(current_active_user)
+):
+    """이슈 언팔로우"""
+    service = IssueService(db)
+
+    success = await service.unfollow_issue(user.id, issue_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="팔로우 중인 이슈가 아닙니다")
+
+    return {"message": "언팔로우 완료", "is_following": False}
+
+
 # 리포트 관련 엔드포인트
 report_router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -162,26 +218,26 @@ report_router = APIRouter(prefix="/reports", tags=["reports"])
 async def get_batch_dates(
         year: int = Query(...),
         month: int = Query(..., ge=1, le=12),
+        categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
-        user: User = Depends(current_active_user)
 ) -> list[str]:
-    """배치 실행된 날짜 목록 (유저 관심사 필터링)"""
-    categories = await get_user_categories(db, user)
+    """배치 실행된 날짜 목록 - 비로그인 허용"""
+    category_list = get_categories_from_query(categories)
     service = IssueService(db)
-    dates = await service.get_batch_dates(year, month, categories=categories)
+    dates = await service.get_batch_dates(year, month, categories=category_list)
     return [d.isoformat() for d in dates]
 
 
 @report_router.get("/{report_date}", response_model=DailyReportResponse)
 async def get_daily_report(
         report_date: date,
+        categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
-        user: User = Depends(current_active_user)
 ):
-    """일간 리포트 조회 (유저 관심사 필터링)"""
-    categories = await get_user_categories(db, user)
+    """일간 리포트 조회 - 비로그인 허용"""
+    category_list = get_categories_from_query(categories)
     service = IssueService(db)
-    snapshots = await service.get_daily_report(report_date, categories=categories)
+    snapshots = await service.get_daily_report(report_date, categories=category_list)
 
     return DailyReportResponse(
         date=report_date,
