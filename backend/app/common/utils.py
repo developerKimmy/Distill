@@ -320,3 +320,104 @@ class EmailService:
         except Exception as e:
             print(f"[EMAIL] 발송 실패: {e}")
             return False
+
+    def send_followed_issues_update(
+        self,
+        recipient: str,
+        issues: list[dict],
+        magic_link_url: str | None = None,
+        batch_time: datetime | None = None
+    ) -> bool:
+        """팔로우 이슈 업데이트 이메일 발송
+
+        Args:
+            recipient: 수신자 이메일
+            issues: 이슈 목록 [{name, category, summary, article_count, issue_id}, ...]
+            magic_link_url: 자동 로그인 매직 링크 URL
+            batch_time: 배치 실행 시간 (없으면 현재 시간)
+        """
+        if not self.gmail_user or not self.gmail_app_password:
+            print("[EMAIL] Gmail 설정 없음, 이메일 발송 스킵")
+            return False
+
+        if not issues:
+            print("[EMAIL] 발송할 팔로우 이슈 없음")
+            return False
+
+        try:
+            # 배치 시간 기준 (없으면 현재 시간)
+            reference_time = batch_time or datetime.now(KST)
+            if reference_time.tzinfo is None:
+                reference_time = reference_time.replace(tzinfo=KST)
+            time_str = reference_time.strftime("%Y-%m-%d %H:%M")
+
+            base_url = magic_link_url.split("?")[0].rsplit("/", 1)[0] if magic_link_url else "https://kimmykim.dev"
+            link_url = magic_link_url or "https://kimmykim.dev"
+
+            subject = f"[DSTILL] 팔로우 이슈 업데이트 {len(issues)}건 - {time_str}"
+
+            # 이슈 목록 HTML 생성
+            issues_html = ""
+            for issue in issues:
+                category_badge = f'<span style="background: #fef3c7; padding: 2px 8px; border-radius: 12px; font-size: 12px; color: #d97706;">{issue.get("category", "기타")}</span>'
+                summary = issue.get("summary", "")[:150] + "..." if issue.get("summary") and len(issue.get("summary", "")) > 150 else issue.get("summary", "-")
+
+                issues_html += f"""
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px 8px; vertical-align: top;">
+                        <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">
+                            🔔 {issue['name']}
+                        </div>
+                        <div style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">{summary}</div>
+                        <div>{category_badge} <span style="color: #9ca3af; font-size: 12px;">기사 {issue.get('article_count', 0)}개</span></div>
+                    </td>
+                </tr>
+                """
+
+            html_body = f"""
+            <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f9fafb;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <h2 style="color: #1b1b32; margin-bottom: 8px;">🔔 팔로우 이슈 업데이트</h2>
+                    <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+                        {time_str} 기준 | 팔로우 중인 이슈에 새 소식이 있습니다
+                    </p>
+
+                    <table style="width: 100%; border-collapse: collapse;">
+                        {issues_html}
+                    </table>
+
+                    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
+                        <a href="{link_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
+                            DSTILL에서 자세히 보기
+                        </a>
+                        <p style="color: #9ca3af; font-size: 11px; margin-top: 8px;">
+                            이 링크는 10분간 유효합니다.
+                        </p>
+                    </div>
+
+                    <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">
+                        이 메일은 팔로우 중인 이슈의 업데이트 알림입니다. 이슈 상세 페이지에서 팔로우를 해제할 수 있습니다.
+                    </p>
+                </div>
+            </body>
+            </html>
+            """
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = self.gmail_user
+            msg["To"] = recipient
+            msg.attach(MIMEText(html_body, "html"))
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.gmail_user, self.gmail_app_password)
+                server.sendmail(self.gmail_user, recipient, msg.as_string())
+
+            print(f"[EMAIL] 팔로우 이슈 업데이트 발송: {recipient} ({len(issues)}개 이슈)")
+            return True
+
+        except Exception as e:
+            print(f"[EMAIL] 발송 실패: {e}")
+            return False

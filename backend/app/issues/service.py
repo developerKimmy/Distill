@@ -246,7 +246,7 @@ class IssueService:
                 # 7. 임베딩 생성
                 step_start = time.time()
                 print(f"[ISSUE]   Step 7: Creating embeddings...")
-                await self._create_embeddings(snapshot.id, item.name, article_dicts, keywords, comments)
+                await self._create_embeddings(snapshot.id, snapshot.date, item.name, article_dicts, keywords, comments)
                 print(f"[ISSUE]   Step 7 completed in {time.time() - step_start:.2f}s")
 
                 # 7.5 후속 검색 (진행형 이슈만)
@@ -282,15 +282,38 @@ class IssueService:
             try:
                 content_start = time.time()
                 print(f"[ISSUE]   Generating content {i+1}/{len(snapshot_ids)}...")
+
+                # 상태: processing
+                await self.db.execute(
+                    select(IssueDailySnapshot).where(IssueDailySnapshot.id == snapshot_id)
+                )
+                snapshot_to_update = await self.db.get(IssueDailySnapshot, snapshot_id)
+                if snapshot_to_update:
+                    snapshot_to_update.content_status = "processing"
+                    await self.db.flush()
+
                 content = await self.content_service.generate_content(snapshot_id)
 
                 # 8.5 팩트체크 (콘텐츠 생성 후)
                 if content:
                     await self.content_service.verify_content(content.id)
 
+                # 상태: completed
+                if snapshot_to_update:
+                    snapshot_to_update.content_status = "completed"
+                    await self.db.flush()
+
                 print(f"[ISSUE]   Content {i+1} generated in {time.time() - content_start:.2f}s")
             except Exception as e:
                 print(f"[ISSUE]   Content generation error (snapshot: {snapshot_id}): {e}")
+                # 상태: failed
+                try:
+                    snapshot_to_update = await self.db.get(IssueDailySnapshot, snapshot_id)
+                    if snapshot_to_update:
+                        snapshot_to_update.content_status = "failed"
+                        await self.db.flush()
+                except Exception:
+                    pass
         print(f"[ISSUE] Step 8 completed in {time.time() - step_start:.2f}s")
 
         await self.db.commit()
@@ -385,32 +408,34 @@ class IssueService:
     async def _create_embeddings(
         self,
         snapshot_id: UUID,
+        snapshot_date: date,
         issue_name: str,
         articles: list[dict],
         keywords: list[str],
         comments: list[dict]
     ) -> None:
-        """임베딩 생성 및 저장"""
+        """임베딩 생성 및 저장 (날짜 컨텍스트 포함)"""
         try:
             embeddings_to_create = []
+            date_prefix = f"({snapshot_date.strftime('%m/%d')} 기준)"
 
             for article in articles:
                 if article.get("description"):
-                    content = f"{issue_name}: {article['title']} - {article['description']}"
+                    content = f"{date_prefix} {issue_name}: {article['title']} - {article['description']}"
                     embeddings_to_create.append({
                         "content_type": "article",
                         "content": content
                     })
 
             for keyword in keywords:
-                content = f"{issue_name}: {keyword}"
+                content = f"{date_prefix} {issue_name}: {keyword}"
                 embeddings_to_create.append({
                     "content_type": "keyword",
                     "content": content
                 })
 
             for comment in comments[:10]:
-                content = f"{issue_name}: {comment['text']}"
+                content = f"{date_prefix} {issue_name}: {comment['text']}"
                 embeddings_to_create.append({
                     "content_type": "comment",
                     "content": content
@@ -438,11 +463,16 @@ class IssueService:
         self,
         categories: list[str] | None = None
     ) -> list[Issue]:
-        """달력용 경량 이슈 목록 조회 (snapshots 로드 안함)"""
-        stmt = select(Issue)
+        """달력용 경량 이슈 목록 조회 (completed 스냅샷이 있는 이슈만)"""
+        # completed 스냅샷이 있는 이슈만 조회
+        stmt = (
+            select(Issue)
+            .join(IssueDailySnapshot)
+            .where(IssueDailySnapshot.content_status == "completed")
+        )
         if categories:
             stmt = stmt.where(Issue.category.in_(categories))
-        stmt = stmt.order_by(Issue.last_seen_at.desc())
+        stmt = stmt.distinct().order_by(Issue.last_seen_at.desc())
 
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
@@ -453,26 +483,35 @@ class IssueService:
         size: int = 20,
         categories: list[str] | None = None
     ) -> tuple[list[Issue], int]:
-        """이슈 목록 조회 (카테고리 필터링 지원)"""
+        """이슈 목록 조회 (completed 스냅샷이 있는 이슈만)"""
         from app.issues.models import IssueContent
         offset = (page - 1) * size
 
-        # 카테고리 필터 적용
-        count_stmt = select(func.count(Issue.id))
+        # completed 스냅샷이 있는 이슈만 카운트
+        count_stmt = (
+            select(func.count(func.distinct(Issue.id)))
+            .join(IssueDailySnapshot)
+            .where(IssueDailySnapshot.content_status == "completed")
+        )
         if categories:
             count_stmt = count_stmt.where(Issue.category.in_(categories))
         result = await self.db.execute(count_stmt)
         total = result.scalar()
 
+        # completed 스냅샷이 있는 이슈 조회
         stmt = (
             select(Issue)
+            .join(IssueDailySnapshot)
+            .where(IssueDailySnapshot.content_status == "completed")
             .options(
-                selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.contents)
+                selectinload(Issue.snapshots.and_(
+                    IssueDailySnapshot.content_status == "completed"
+                )).selectinload(IssueDailySnapshot.contents)
             )
         )
         if categories:
             stmt = stmt.where(Issue.category.in_(categories))
-        stmt = stmt.order_by(Issue.last_seen_at.desc()).offset(offset).limit(size)
+        stmt = stmt.distinct().order_by(Issue.last_seen_at.desc()).offset(offset).limit(size)
 
         result = await self.db.execute(stmt)
         issues = list(result.scalars().all())
@@ -480,14 +519,22 @@ class IssueService:
         return issues, total
 
     async def get_issue(self, issue_id: UUID) -> Issue | None:
-        """이슈 상세 조회"""
+        """이슈 상세 조회 (completed 스냅샷만)"""
         stmt = (
             select(Issue)
             .options(
-                selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.articles),
-                selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.keywords),
-                selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.insights),
-                selectinload(Issue.snapshots).selectinload(IssueDailySnapshot.contents)
+                selectinload(Issue.snapshots.and_(
+                    IssueDailySnapshot.content_status == "completed"
+                )).selectinload(IssueDailySnapshot.articles),
+                selectinload(Issue.snapshots.and_(
+                    IssueDailySnapshot.content_status == "completed"
+                )).selectinload(IssueDailySnapshot.keywords),
+                selectinload(Issue.snapshots.and_(
+                    IssueDailySnapshot.content_status == "completed"
+                )).selectinload(IssueDailySnapshot.insights),
+                selectinload(Issue.snapshots.and_(
+                    IssueDailySnapshot.content_status == "completed"
+                )).selectinload(IssueDailySnapshot.contents)
             )
             .where(Issue.id == issue_id)
         )
@@ -499,7 +546,7 @@ class IssueService:
         report_date: date,
         categories: list[str] | None = None
     ) -> list[IssueDailySnapshot]:
-        """일간 리포트 조회 (카테고리 필터링 지원)"""
+        """일간 리포트 조회 (completed 스냅샷만)"""
         stmt = (
             select(IssueDailySnapshot)
             .join(Issue)
@@ -510,7 +557,10 @@ class IssueService:
                 selectinload(IssueDailySnapshot.insights),
                 selectinload(IssueDailySnapshot.contents)
             )
-            .where(IssueDailySnapshot.date == report_date)
+            .where(
+                IssueDailySnapshot.date == report_date,
+                IssueDailySnapshot.content_status == "completed"
+            )
         )
         if categories:
             stmt = stmt.where(Issue.category.in_(categories))
@@ -525,10 +575,11 @@ class IssueService:
         month: int,
         categories: list[str] | None = None
     ) -> list[date]:
-        """배치 실행된 날짜 목록 (카테고리 필터링 지원)"""
+        """배치 실행된 날짜 목록 (completed 스냅샷만)"""
         stmt = select(IssueDailySnapshot.date).where(
             func.extract('year', IssueDailySnapshot.date) == year,
-            func.extract('month', IssueDailySnapshot.date) == month
+            func.extract('month', IssueDailySnapshot.date) == month,
+            IssueDailySnapshot.content_status == "completed"
         )
         if categories:
             stmt = stmt.join(Issue).where(Issue.category.in_(categories))

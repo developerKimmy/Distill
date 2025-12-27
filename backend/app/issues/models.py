@@ -45,6 +45,8 @@ class IssueDailySnapshot(Base, UUIDMixin):
     article_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 콘텐츠 처리 상태: pending -> processing -> completed / failed
+    content_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

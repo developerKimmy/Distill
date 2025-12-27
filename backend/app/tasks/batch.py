@@ -31,9 +31,13 @@ def run_global_batch(self, triggered_by: str = "scheduled"):
 
     # 배치 완료 후 알림 태스크 트리거 (DB 충돌 방지를 위해 체이닝)
     if result.get("status") == "completed":
+        batch_run_id = result.get("batch_run_id")
         batch_time = datetime.now(KST).strftime("%H:%M")
         print(f"[TASK] Triggering notifications for {batch_time}")
+        # 카테고리 다이제스트 알림
         send_scheduled_notifications.delay(batch_time=batch_time)
+        # 팔로우 이슈 알림 (별도 이메일)
+        send_followed_issues_notifications.delay(batch_run_id=batch_run_id)
 
     return result
 
@@ -156,42 +160,15 @@ def _send_scheduled_notifications_sync(batch_time: str | None = None):
 
                     rows = db.execute(stmt).all()
                     issues = []
-                    category_issue_ids = set()
                     for issue, snapshot in rows:
                         issues.append({
                             "name": issue.name,
                             "category": issue.category,
                             "summary": snapshot.summary,
                             "article_count": snapshot.article_count,
-                            "is_followed": False
                         })
-                        category_issue_ids.add(issue.id)
 
-                    # 팔로우한 이슈도 추가 (카테고리 필터에 없는 것들)
-                    followed_stmt = (
-                        select(Issue, IssueDailySnapshot)
-                        .join(IssueDailySnapshot, Issue.id == IssueDailySnapshot.issue_id)
-                        .join(IssueFollow, Issue.id == IssueFollow.issue_id)
-                        .where(
-                            IssueDailySnapshot.batch_run_id == batch_run.id,
-                            IssueFollow.user_id == user.id
-                        )
-                        .order_by(IssueDailySnapshot.article_count.desc())
-                    )
-                    followed_rows = db.execute(followed_stmt).all()
-                    followed_count = 0
-                    for issue, snapshot in followed_rows:
-                        if issue.id not in category_issue_ids:
-                            issues.append({
-                                "name": issue.name,
-                                "category": issue.category,
-                                "summary": snapshot.summary,
-                                "article_count": snapshot.article_count,
-                                "is_followed": True
-                            })
-                            followed_count += 1
-
-                    print(f"[NOTIFICATION] Found {len(issues)} issues for {user.email} ({followed_count} followed)")
+                    print(f"[NOTIFICATION] Found {len(issues)} category issues for {user.email}")
 
                     if issues:
                         # 매직 링크 생성
@@ -228,6 +205,117 @@ def _send_scheduled_notifications_sync(batch_time: str | None = None):
 
     except Exception as e:
         print(f"[NOTIFICATION] Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"sent_count": 0, "error": str(e)}
+
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, name="app.tasks.batch.send_followed_issues_notifications")
+def send_followed_issues_notifications(self, batch_run_id: str):
+    """팔로우 이슈 업데이트 알림 발송 (배치 완료 후 호출)
+
+    Args:
+        batch_run_id: 배치 실행 ID
+    """
+    print(f"[TASK] Sending followed issues notifications for batch: {batch_run_id}")
+    result = _send_followed_issues_notifications_sync(batch_run_id)
+    print(f"[TASK] Followed issues notification completed: {result}")
+    return result
+
+
+def _send_followed_issues_notifications_sync(batch_run_id: str):
+    """팔로우 이슈 알림 발송 (동기)"""
+    from uuid import UUID
+
+    db = SessionLocal()
+    try:
+        # 배치 조회
+        batch_run = db.execute(
+            select(BatchRun).where(BatchRun.id == UUID(batch_run_id))
+        ).scalar_one_or_none()
+
+        if not batch_run:
+            print(f"[FOLLOWED] Batch not found: {batch_run_id}")
+            return {"sent_count": 0, "message": "Batch not found"}
+
+        # 이번 배치에서 업데이트된 이슈를 팔로우하는 유저들 조회
+        # (팔로우 테이블 + 스냅샷 테이블 조인)
+        stmt = (
+            select(User, Issue, IssueDailySnapshot)
+            .join(IssueFollow, User.id == IssueFollow.user_id)
+            .join(Issue, IssueFollow.issue_id == Issue.id)
+            .join(IssueDailySnapshot, Issue.id == IssueDailySnapshot.issue_id)
+            .where(IssueDailySnapshot.batch_run_id == batch_run.id)
+            .order_by(User.id, IssueDailySnapshot.article_count.desc())
+        )
+
+        rows = db.execute(stmt).all()
+
+        if not rows:
+            print("[FOLLOWED] No followed issues with updates")
+            return {"sent_count": 0, "message": "No followed issues with updates"}
+
+        # 유저별로 그룹핑
+        user_issues: dict[str, list[dict]] = {}
+        user_map: dict[str, User] = {}
+
+        for user, issue, snapshot in rows:
+            user_id = str(user.id)
+            if user_id not in user_issues:
+                user_issues[user_id] = []
+                user_map[user_id] = user
+
+            user_issues[user_id].append({
+                "name": issue.name,
+                "category": issue.category,
+                "summary": snapshot.summary,
+                "article_count": snapshot.article_count,
+                "issue_id": str(issue.id),
+            })
+
+        print(f"[FOLLOWED] Found {len(user_issues)} users with followed issue updates")
+
+        # 이메일 발송
+        sent_count = 0
+        if settings.GMAIL_USER and settings.GMAIL_APP_PASSWORD:
+            email_service = EmailService(settings.GMAIL_USER, settings.GMAIL_APP_PASSWORD)
+
+            for user_id, issues in user_issues.items():
+                user = user_map[user_id]
+                try:
+                    magic_url = get_magic_link_url(user.id)
+
+                    success = email_service.send_followed_issues_update(
+                        recipient=user.email,
+                        issues=issues,
+                        magic_link_url=magic_url,
+                        batch_time=batch_run.completed_at
+                    )
+
+                    if success:
+                        sent_count += 1
+                        print(f"[FOLLOWED] Sent to {user.email} ({len(issues)} issues)")
+                    else:
+                        print(f"[FOLLOWED] Failed to send to {user.email}")
+
+                except Exception as e:
+                    print(f"[FOLLOWED] Error for {user.email}: {e}")
+                    import traceback
+                    traceback.print_exc()
+        else:
+            print("[FOLLOWED] Gmail settings not configured")
+
+        return {
+            "sent_count": sent_count,
+            "total_users": len(user_issues),
+            "batch_run_id": batch_run_id
+        }
+
+    except Exception as e:
+        print(f"[FOLLOWED] Fatal error: {e}")
         import traceback
         traceback.print_exc()
         return {"sent_count": 0, "error": str(e)}

@@ -1,5 +1,6 @@
 import time
 from uuid import UUID
+from datetime import date
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -123,6 +124,7 @@ class ContentService:
         print(f"[CONTENT]   Generating content with LLM...")
         content_text = await self._generate_with_llm(
             issue_name=issue_name,
+            snapshot_date=snapshot.date,
             articles=articles + additional_articles,
             keywords=keywords,
             needs=needs,
@@ -267,6 +269,7 @@ class ContentService:
     async def _generate_with_llm(
         self,
         issue_name: str,
+        snapshot_date: date,
         articles: list[dict],
         keywords: list[str],
         needs: list[str],
@@ -277,8 +280,9 @@ class ContentService:
         from datetime import datetime, timezone, timedelta
         KST = timezone(timedelta(hours=9))
 
+        date_prefix = f"({snapshot_date.strftime('%m/%d')} 기준)"
         articles_text = "\n\n".join([
-            f"제목: {a['title']}\n내용: {a.get('description', '없음')}\n출처: {a['url']}"
+            f"{date_prefix} 제목: {a['title']}\n내용: {a.get('description', '없음')}\n출처: {a['url']}"
             for a in articles[:10]
         ])
         similar_text = "\n".join([f"- {c['content']}" for c in similar_contents])
