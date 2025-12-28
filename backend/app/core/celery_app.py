@@ -18,7 +18,14 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
+    # Agent 사이클 실행 (매 정시, 1시간마다)
+    # 뉴스 수집 → 클러스터링 → 이벤트 감지 → 즉시 알림
+    "run-agent-cycle": {
+        "task": "app.tasks.agent.run_agent_cycle",
+        "schedule": crontab(minute=0),  # 매 정시
+    },
     # 글로벌 배치 실행 (하루 3회: 06:00, 12:00, 18:00)
+    # 콘텐츠 생성 (요약, 타임라인 등) 담당
     "run-global-batch-morning": {
         "task": "app.tasks.batch.run_global_batch",
         "schedule": crontab(hour=6, minute=0),
@@ -33,12 +40,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.batch.run_global_batch",
         "schedule": crontab(hour=18, minute=0),
         "args": ("scheduled",)
-    },
-    # 이메일 알림 체크 (매 30분, :05/:35에 실행하여 배치와 충돌 방지)
-    # 배치 시간(06:00, 12:00, 18:00)에는 배치 완료 후 체이닝으로 호출됨
-    "send-scheduled-notifications": {
-        "task": "app.tasks.batch.send_scheduled_notifications",
-        "schedule": crontab(minute="5,35"),
     },
 }
 

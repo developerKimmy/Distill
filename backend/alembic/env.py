@@ -23,6 +23,7 @@ from app.issues.models import (
     IssueKeyword, IssueEmbedding, IssueContent
 )
 from app.insights.models import IssueInsight
+from app.notifications.models import Notification, AgentRun
 
 
 # this is the Alembic Config object, which provides

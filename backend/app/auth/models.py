@@ -11,3 +11,4 @@ class User(Base, SQLAlchemyBaseUserTableUUID):
     # Relationships
     settings: Mapped["UserSettings"] = relationship("UserSettings", back_populates="user", uselist=False)
     followed_issues = relationship("IssueFollow", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")

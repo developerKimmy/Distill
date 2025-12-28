@@ -81,6 +81,25 @@ export interface NotificationSettings {
 // Re-export for backward compatibility (use utils/constants.ts instead)
 export { AVAILABLE_CATEGORIES } from '../utils/constants';
 
+// 알림
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string | null;
+  issueId: string | null;
+  isRead: boolean;
+  createdAt: string;
+  issueName: string | null;
+  issueCategory: string | null;
+}
+
+export interface NotificationListResponse {
+  notifications: Notification[];
+  total: number;
+  unreadCount: number;
+}
+
 // API 응답
 export interface PaginatedResponse<T> {
   items: T[];

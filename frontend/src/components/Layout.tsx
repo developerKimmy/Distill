@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../assets/distill_light.svg';
 import CategoryFilter from './CategoryFilter';
+import NotificationBell from './NotificationBell';
 import { isLoggedIn } from '../utils/categories';
 
 export default function Layout() {
@@ -53,6 +54,10 @@ export default function Layout() {
 
       {loggedIn ? (
         <>
+          {/* 알림 벨 */}
+          <div className={mobile ? 'py-2' : ''}>
+            <NotificationBell />
+          </div>
           <Link
             to="/settings"
             onClick={mobile ? closeMobileMenu : undefined}

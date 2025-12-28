@@ -10,6 +10,7 @@ import ReportPage from './pages/ReportPage';
 import IssuePage from './pages/IssuePage';
 import IssueListPage from './pages/IssueListPage';
 import SettingsPage from './pages/SettingsPage';
+import NotificationsPage from './pages/NotificationsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,7 +37,15 @@ export default function App() {
             <Route path="report/:date" element={<ReportPage />} />
             <Route path="issues" element={<IssueListPage />} />
             <Route path="issues/:issueId" element={<IssuePage />} />
-            {/* 설정 페이지만 로그인 필요 */}
+            {/* 로그인 필요 페이지 */}
+            <Route
+              path="notifications"
+              element={
+                <PrivateRoute>
+                  <NotificationsPage />
+                </PrivateRoute>
+              }
+            />
             <Route
               path="settings"
               element={
