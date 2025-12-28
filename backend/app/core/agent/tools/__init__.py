@@ -6,6 +6,7 @@ from app.core.agent.tools.clustering import ClusteringProvider, ClusteredIssue
 from app.core.agent.tools.keyword_provider import KeywordProvider, ExtractedKeywords
 from app.core.agent.tools.needs_provider import NeedsProvider, ExtractedNeeds
 from app.core.agent.tools.embedding_provider import EmbeddingProvider
+from app.core.agent.tools.gap_analyzer import GapAnalyzer, GapAnalysisResult, ContentGap
 
 __all__ = [
     "SearchProvider",
@@ -23,5 +24,8 @@ __all__ = [
     "ExtractedKeywords",
     "NeedsProvider",
     "ExtractedNeeds",
-    "EmbeddingProvider"
+    "EmbeddingProvider",
+    "GapAnalyzer",
+    "GapAnalysisResult",
+    "ContentGap",
 ]

@@ -2,7 +2,7 @@ import time
 import numpy as np
 from uuid import UUID
 from datetime import date, datetime, timezone, timedelta
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +18,8 @@ from app.issues.models import (
 from app.insights.models import IssueInsight
 from app.core.agent.tools import (
     NaverNewsProvider, ClusteringProvider, KeywordProvider,
-    YouTubeProvider, NeedsProvider, YouTubeAPIError, EmbeddingProvider
+    YouTubeProvider, NeedsProvider, YouTubeAPIError, EmbeddingProvider,
+    GapAnalyzer, TavilyProvider
 )
 from app.content.service import ContentService
 from app.common.utils import ArticleDeduplicator, PipelineResult
@@ -42,6 +43,8 @@ class IssueService:
         self.youtube_provider = YouTubeProvider()
         self.needs_provider = NeedsProvider()
         self.embedding_provider = EmbeddingProvider()
+        self.gap_analyzer = GapAnalyzer()
+        self.tavily_provider = TavilyProvider()
         self.content_service = ContentService(db)
         self.deduplicator = ArticleDeduplicator()
 
@@ -67,87 +70,211 @@ class IssueService:
             print(f"[ISSUE]   Found exact name match: '{exact_match.name}'")
             return exact_match, 1.0
 
-        # 2. 임베딩 기반 유사도 검색
+        # 2. 임베딩 기반 유사도 검색 (pgvector 네이티브)
         text_to_embed = f"{name}: {summary}"
         new_embedding = self.embedding_provider.embed(text_to_embed)
 
-        # 활성 이슈 중 임베딩이 있는 것들 조회
+        # pgvector의 <=> 연산자로 DB에서 직접 유사도 검색
+        query = text("""
+            SELECT
+                id,
+                name,
+                1 - (name_embedding <=> :embedding) as similarity
+            FROM issues
+            WHERE status = 'active'
+              AND name_embedding IS NOT NULL
+            ORDER BY name_embedding <=> :embedding
+            LIMIT 1
+        """)
+
         result = await self.db.execute(
-            select(Issue).where(
-                Issue.status == "active",
-                Issue.name_embedding.isnot(None)
-            )
+            query,
+            {"embedding": str(new_embedding)}
         )
-        active_issues = result.scalars().all()
+        row = result.fetchone()
 
-        best_match = None
-        best_similarity = 0.0
+        if row and row.similarity >= SIMILARITY_THRESHOLD:
+            # 매칭된 이슈 객체 로드
+            issue = await self.db.get(Issue, row.id)
+            print(f"[ISSUE]   Found similar issue: '{row.name}' (similarity: {row.similarity:.3f})")
+            return issue, row.similarity
 
-        for issue in active_issues:
-            similarity = cosine_similarity(new_embedding, list(issue.name_embedding))
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match = issue
+        return None, row.similarity if row else 0.0
 
-        # 임계값 이상이면 반환
-        if best_similarity >= SIMILARITY_THRESHOLD:
-            print(f"[ISSUE]   Found similar issue: '{best_match.name}' (similarity: {best_similarity:.3f})")
-            return best_match, best_similarity
+    async def _match_articles_to_issues(
+        self,
+        articles: list[dict],
+        similarity_threshold: float = 0.85
+    ) -> tuple[dict[UUID, list[dict]], list[dict]]:
+        """기사들을 기존 이슈에 임베딩으로 매칭
 
-        return None, best_similarity
+        Args:
+            articles: [{"title": "", "description": ""}, ...]
+            similarity_threshold: 매칭 임계값
+
+        Returns:
+            (matched: {issue_id: [articles]}, unmatched: [articles])
+        """
+        if not articles:
+            return {}, []
+
+        matched: dict[UUID, list[dict]] = {}
+        unmatched: list[dict] = []
+
+        # 배치로 임베딩 생성
+        texts = [
+            f"{a.get('title', '')}: {a.get('description', '')[:200] if a.get('description') else ''}"
+            for a in articles
+        ]
+        embeddings = self.embedding_provider.embed_batch(texts)
+
+        for i, article in enumerate(articles):
+            article_embedding = embeddings[i]
+
+            # 벡터 유사도 검색 (가장 유사한 임베딩 찾기)
+            query = text("""
+                SELECT
+                    ie.snapshot_id,
+                    ids.issue_id,
+                    i.name as issue_name,
+                    1 - (ie.embedding <=> :embedding) as similarity
+                FROM issue_embeddings ie
+                JOIN issue_daily_snapshots ids ON ids.id = ie.snapshot_id
+                JOIN issues i ON i.id = ids.issue_id
+                WHERE i.status = 'active'
+                  AND ie.content_type = 'article'
+                ORDER BY ie.embedding <=> :embedding
+                LIMIT 1
+            """)
+
+            result = await self.db.execute(
+                query,
+                {"embedding": str(article_embedding)}
+            )
+            row = result.fetchone()
+
+            if row and row.similarity >= similarity_threshold:
+                issue_id = row.issue_id
+                if issue_id not in matched:
+                    matched[issue_id] = []
+                matched[issue_id].append({
+                    **article,
+                    "_matched_issue": row.issue_name,
+                    "_similarity": row.similarity
+                })
+                print(f"[MATCH] '{article.get('title', '')[:30]}...' → '{row.issue_name}' ({row.similarity:.2f})")
+            else:
+                unmatched.append(article)
+
+        print(f"[MATCH] 결과: {sum(len(v) for v in matched.values())}개 매칭, {len(unmatched)}개 새 기사")
+        return matched, unmatched
 
     async def collect_issues(self, batch_run_id: UUID | None = None) -> list[Issue]:
-        """이슈 수집 파이프라인
+        """이슈 수집 파이프라인 (임베딩 우선 매칭)
 
         Steps:
         1. 랭킹 뉴스 스크래핑
-        2. 클러스터링 (LLM)
-        3. 이슈별 처리 시작
-        4. 기사 검색 + 중복 제거
-        5. 키워드 추출
-        6. YouTube 수집
-        7. 임베딩 생성
-        7.5. 후속 검색 (진행형 이슈)
-        8. 콘텐츠 생성 + 팩트체크
+        2. 임베딩으로 기존 이슈 매칭 (빠름)
+        3. 매칭된 기사 → 기존 이슈 업데이트
+        4. 매칭 안 된 기사만 → LLM 클러스터링 (느림, 비쌈)
+        5. 이슈별 후처리 (키워드, 갭분석, 임베딩, 콘텐츠)
         """
-        today = datetime.now(KST).date()  # 한국 시간 기준
+        today = datetime.now(KST).date()
         total_start = time.time()
         pipeline_result = PipelineResult()
-        self.deduplicator.reset()  # 중복 제거기 초기화
+        self.deduplicator.reset()
 
-        print(f"[ISSUE] ========== collect_issues started ==========")
+        print(f"[ISSUE] ========== collect_issues started (embedding-first) ==========")
 
         # 1. 랭킹 뉴스 스크래핑
         step_start = time.time()
         print(f"[ISSUE] Step 1: Scraping ranking news...")
         try:
             news_list = self.news_provider.get_ranking_news()
-            titles = [news.title for news in news_list]
-            print(f"[ISSUE] Step 1 completed: {len(titles)} news titles in {time.time() - step_start:.2f}s")
+            # 제목 + 설명 포함
+            articles_raw = [
+                {"title": news.title, "description": getattr(news, 'description', '') or ''}
+                for news in news_list
+            ]
+            print(f"[ISSUE] Step 1 completed: {len(articles_raw)} articles in {time.time() - step_start:.2f}s")
         except Exception as e:
             print(f"[ISSUE] Step 1 FAILED: {e}")
             raise
 
-        # 기존 active 이슈 목록 조회
-        result = await self.db.execute(
-            select(Issue.name).where(Issue.status == "active")
-        )
-        existing_issues = result.scalars().all()
-
-        # 2. 클러스터링 (기존 이슈 전달)
+        # 2. 임베딩으로 기존 이슈 매칭
         step_start = time.time()
-        print(f"[ISSUE] Step 2: Clustering news...")
-        try:
-            clustered = self.clustering_provider.cluster_news(titles, existing_issues=existing_issues)
-            print(f"[ISSUE] Step 2 completed: {len(clustered)} clusters in {time.time() - step_start:.2f}s")
-        except Exception as e:
-            print(f"[ISSUE] Step 2 FAILED: {e}")
-            raise
+        print(f"[ISSUE] Step 2: Matching articles to existing issues via embeddings...")
+        matched_by_issue, unmatched_articles = await self._match_articles_to_issues(articles_raw)
+        print(f"[ISSUE] Step 2 completed: {sum(len(v) for v in matched_by_issue.values())} matched, {len(unmatched_articles)} unmatched in {time.time() - step_start:.2f}s")
 
-        # 3. 이슈별 처리
         issues = []
         snapshot_ids = []
-        print(f"[ISSUE] Step 3: Processing {len(clustered)} issues...")
+
+        # 3. 매칭된 기사들 → 기존 이슈 업데이트
+        if matched_by_issue:
+            step_start = time.time()
+            print(f"[ISSUE] Step 3: Updating {len(matched_by_issue)} existing issues...")
+            for issue_id, matched_articles in matched_by_issue.items():
+                try:
+                    issue = await self.db.get(Issue, issue_id)
+                    if not issue:
+                        continue
+
+                    issue.last_seen_at = today
+                    issue.total_snapshots += 1
+
+                    # 스냅샷 생성
+                    snapshot = IssueDailySnapshot(
+                        issue_id=issue.id,
+                        batch_run_id=batch_run_id,
+                        date=today,
+                        article_count=len(matched_articles),
+                        summary=f"임베딩 매칭으로 {len(matched_articles)}개 기사 수집"
+                    )
+                    self.db.add(snapshot)
+                    await self.db.flush()
+
+                    # 기사 저장
+                    for article in matched_articles:
+                        issue_article = IssueArticle(
+                            snapshot_id=snapshot.id,
+                            title=article["title"],
+                            description=article.get("description"),
+                            url=article.get("url", ""),
+                            press=article.get("press")
+                        )
+                        self.db.add(issue_article)
+
+                    issues.append(issue)
+                    snapshot_ids.append(snapshot.id)
+                    print(f"[ISSUE]   Updated '{issue.name}' with {len(matched_articles)} articles")
+
+                except Exception as e:
+                    print(f"[ISSUE]   Failed to update issue {issue_id}: {e}")
+
+            print(f"[ISSUE] Step 3 completed in {time.time() - step_start:.2f}s")
+
+        # 4. 매칭 안 된 기사만 LLM 클러스터링
+        clustered = []
+        if unmatched_articles:
+            step_start = time.time()
+            print(f"[ISSUE] Step 4: Clustering {len(unmatched_articles)} unmatched articles via LLM...")
+
+            # 기존 active 이슈 목록
+            result = await self.db.execute(
+                select(Issue.name).where(Issue.status == "active")
+            )
+            existing_issues = result.scalars().all()
+
+            try:
+                titles = [a["title"] for a in unmatched_articles]
+                clustered = self.clustering_provider.cluster_news(titles, existing_issues=existing_issues)
+                print(f"[ISSUE] Step 4 completed: {len(clustered)} new clusters in {time.time() - step_start:.2f}s")
+            except Exception as e:
+                print(f"[ISSUE] Step 4 FAILED: {e}")
+
+        # 5. 새 클러스터 처리
+        print(f"[ISSUE] Step 5: Processing {len(clustered)} new clusters...")
 
         for idx, item in enumerate(clustered):
             issue_start = time.time()
@@ -192,9 +319,9 @@ class IssueService:
                 self.db.add(snapshot)
                 await self.db.flush()
 
-                # 4. 네이버 API로 기사 상세 검색 + 중복 제거
+                # 5.1 네이버 API로 기사 상세 검색 + 중복 제거
                 step_start = time.time()
-                print(f"[ISSUE]   Step 4: Searching news articles for '{item.name}'...")
+                print(f"[ISSUE]   Step 5.1: Searching news articles for '{item.name}'...")
                 articles = self.news_provider.search_news(item.name, display=10)
 
                 article_dicts = []
@@ -233,16 +360,16 @@ class IssueService:
                     print(f"[ISSUE]   Updating first_seen_at: {issue.first_seen_at} -> {earliest_pub_date}")
                     issue.first_seen_at = earliest_pub_date
 
-                print(f"[ISSUE]   Step 4 completed: {saved_count}/{len(articles)} articles (중복 제거) in {time.time() - step_start:.2f}s")
+                print(f"[ISSUE]   Step 5.1 completed: {saved_count}/{len(articles)} articles (중복 제거) in {time.time() - step_start:.2f}s")
 
-                # 5. 키워드 추출
+                # 5.2 키워드 추출
                 step_start = time.time()
-                print(f"[ISSUE]   Step 5: Extracting keywords...")
+                print(f"[ISSUE]   Step 5.2: Extracting keywords...")
                 keywords = []
                 if article_dicts:
                     try:
                         extracted = self.keyword_provider.extract_keywords(item.name, article_dicts)
-                        print(f"[ISSUE]   Step 5 completed: {len(extracted.keywords)} keywords in {time.time() - step_start:.2f}s")
+                        print(f"[ISSUE]   Step 5.2 completed: {len(extracted.keywords)} keywords in {time.time() - step_start:.2f}s")
                         for keyword in extracted.keywords:
                             issue_keyword = IssueKeyword(
                                 snapshot_id=snapshot.id,
@@ -251,30 +378,43 @@ class IssueService:
                             self.db.add(issue_keyword)
                             keywords.append(keyword)
                     except Exception as e:
-                        print(f"[ISSUE]   Step 5 WARNING: 키워드 추출 실패 - {e}")
+                        print(f"[ISSUE]   Step 5.2 WARNING: 키워드 추출 실패 - {e}")
 
-                # 6. YouTube 수집
+                # 5.3 갭 분석 + 크로스체크
                 step_start = time.time()
-                print(f"[ISSUE]   Step 6: Collecting YouTube videos and comments...")
+                print(f"[ISSUE]   Step 5.3: Gap analysis and cross-check...")
+                gap_result, crosscheck_articles = await self._analyze_and_crosscheck(
+                    issue_name=item.name,
+                    articles=article_dicts,
+                    keywords=keywords,
+                    snapshot_id=snapshot.id
+                )
+                if crosscheck_articles:
+                    article_dicts.extend(crosscheck_articles)
+                print(f"[ISSUE]   Step 5.3 completed: confidence={gap_result.confidence:.2f}, +{len(crosscheck_articles)} articles in {time.time() - step_start:.2f}s")
+
+                # 5.4 YouTube 수집
+                step_start = time.time()
+                print(f"[ISSUE]   Step 5.4: Collecting YouTube videos and comments...")
                 comments = await self._collect_youtube(snapshot.id, item.name)
-                print(f"[ISSUE]   Step 6 completed: {len(comments)} comments in {time.time() - step_start:.2f}s")
+                print(f"[ISSUE]   Step 5.4 completed: {len(comments)} comments in {time.time() - step_start:.2f}s")
 
-                # 7. 임베딩 생성
+                # 5.5 임베딩 생성
                 step_start = time.time()
-                print(f"[ISSUE]   Step 7: Creating embeddings...")
+                print(f"[ISSUE]   Step 5.5: Creating embeddings...")
                 await self._create_embeddings(snapshot.id, snapshot.date, item.name, article_dicts, keywords, comments)
-                print(f"[ISSUE]   Step 7 completed in {time.time() - step_start:.2f}s")
+                print(f"[ISSUE]   Step 5.5 completed in {time.time() - step_start:.2f}s")
 
-                # 7.5 후속 검색 (진행형 이슈만)
+                # 5.6 후속 검색 (진행형 이슈만)
                 if item.issue_type == "ongoing" and item.related_search_terms:
                     step_start = time.time()
-                    print(f"[ISSUE]   Step 7.5: Follow-up search for ongoing issue...")
+                    print(f"[ISSUE]   Step 5.6: Follow-up search for ongoing issue...")
                     followup_count = await self._follow_up_search(
                         snapshot.id,
                         item.related_search_terms,
                         existing_urls={a["url"] for a in article_dicts}
                     )
-                    print(f"[ISSUE]   Step 7.5 completed: {followup_count} additional articles in {time.time() - step_start:.2f}s")
+                    print(f"[ISSUE]   Step 5.6 completed: {followup_count} additional articles in {time.time() - step_start:.2f}s")
 
                 print(f"[ISSUE] --- Issue {idx+1} completed in {time.time() - issue_start:.2f}s ---")
                 issues.append(issue)
@@ -291,9 +431,9 @@ class IssueService:
         print(f"[ISSUE] Issue processing: {pipeline_result.summary()}")
         print(f"[ISSUE] Starting content generation...")
 
-        # 8. 콘텐츠 생성 + 팩트체크
+        # 6. 콘텐츠 생성 + 팩트체크
         step_start = time.time()
-        print(f"[ISSUE] Step 8: Generating content for {len(snapshot_ids)} snapshots...")
+        print(f"[ISSUE] Step 6: Generating content for {len(snapshot_ids)} snapshots...")
         for i, snapshot_id in enumerate(snapshot_ids):
             try:
                 content_start = time.time()
@@ -310,7 +450,7 @@ class IssueService:
 
                 content = await self.content_service.generate_content(snapshot_id)
 
-                # 8.5 팩트체크 (콘텐츠 생성 후)
+                # 6.1 팩트체크 (콘텐츠 생성 후)
                 if content:
                     await self.content_service.verify_content(content.id)
 
@@ -330,7 +470,7 @@ class IssueService:
                         await self.db.flush()
                 except Exception:
                     pass
-        print(f"[ISSUE] Step 8 completed in {time.time() - step_start:.2f}s")
+        print(f"[ISSUE] Step 6 completed in {time.time() - step_start:.2f}s")
 
         await self.db.commit()
         print(f"[ISSUE] ========== collect_issues completed in {time.time() - total_start:.2f}s ==========")
@@ -420,6 +560,105 @@ class IssueService:
             print(f"YouTube 수집 에러 (이슈: {issue_name}): {e}")
 
         return all_comments
+
+    async def _analyze_and_crosscheck(
+        self,
+        issue_name: str,
+        articles: list[dict],
+        keywords: list[str],
+        snapshot_id: UUID
+    ) -> tuple["GapAnalysisResult", list[dict]]:
+        """갭 분석 후 크로스체크 검색 수행
+
+        Args:
+            issue_name: 이슈 이름
+            articles: 수집된 기사들
+            keywords: 추출된 키워드들
+            snapshot_id: 스냅샷 ID (인사이트 저장용)
+
+        Returns:
+            (GapAnalysisResult, 추가 수집된 기사들)
+        """
+        from app.core.agent.tools import GapAnalysisResult
+
+        crosscheck_articles = []
+
+        try:
+            # 1. 갭 분석
+            gap_result = self.gap_analyzer.analyze(issue_name, articles, keywords)
+            print(f"[ISSUE]     Gap analysis: confidence={gap_result.confidence:.2f}, gaps={len(gap_result.gaps)}, claims={len(gap_result.key_claims)}")
+
+            # confidence가 충분히 높으면 크로스체크 스킵
+            if gap_result.confidence >= 0.8:
+                print(f"[ISSUE]     Confidence high enough, skipping cross-check")
+                return gap_result, []
+
+            # 2. 검색 쿼리 추출 (최대 3개)
+            search_queries = self.gap_analyzer.get_search_queries(gap_result, max_queries=3)
+            if not search_queries:
+                return gap_result, []
+
+            print(f"[ISSUE]     Cross-check queries: {search_queries}")
+
+            # 3. Tavily로 크로스체크 검색
+            existing_urls = {a.get("url") for a in articles if a.get("url")}
+
+            for query in search_queries:
+                try:
+                    results = await self.tavily_provider.search(query, max_results=3)
+                    for result in results:
+                        if result.url in existing_urls:
+                            continue
+                        snippet = result.snippet or ""
+                        if self.deduplicator.is_duplicate(result.url, result.title, snippet):
+                            continue
+
+                        self.deduplicator.add(result.url, result.title, snippet)
+                        existing_urls.add(result.url)
+
+                        # 크로스체크 기사로 저장
+                        crosscheck_article = IssueArticle(
+                            snapshot_id=snapshot_id,
+                            title=result.title,
+                            description=snippet[:500] if snippet else None,
+                            url=result.url,
+                            press="crosscheck",  # 크로스체크 출처 표시
+                            published_at=None
+                        )
+                        self.db.add(crosscheck_article)
+
+                        crosscheck_articles.append({
+                            "title": result.title,
+                            "description": snippet[:500] if snippet else "",
+                            "url": result.url,
+                            "is_crosscheck": True
+                        })
+
+                except Exception as e:
+                    print(f"[ISSUE]     Cross-check search error for '{query}': {e}")
+
+            # 4. 갭 분석 결과를 IssueInsight에 저장
+            if gap_result.gaps or gap_result.key_claims:
+                insight = IssueInsight(
+                    snapshot_id=snapshot_id,
+                    verified_angles={
+                        "gaps": [
+                            {"type": g.gap_type, "description": g.description, "priority": g.priority}
+                            for g in gap_result.gaps
+                        ],
+                        "key_claims": gap_result.key_claims,
+                        "confidence": gap_result.confidence
+                    },
+                    content_directions={"crosscheck_count": len(crosscheck_articles)}
+                )
+                self.db.add(insight)
+
+            return gap_result, crosscheck_articles
+
+        except Exception as e:
+            print(f"[ISSUE]     Gap analysis error: {e}")
+            # 에러 시 빈 결과 반환
+            return GapAnalysisResult(gaps=[], key_claims=[], confidence=0.5), []
 
     async def _create_embeddings(
         self,

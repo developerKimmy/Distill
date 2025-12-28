@@ -45,7 +45,9 @@ def verify_magic_token(token: str) -> UUID | None:
         return None
 
 
-def get_magic_link_url(user_id: UUID, base_url: str = "https://kimmykim.dev") -> str:
+def get_magic_link_url(user_id: UUID, base_url: str | None = None) -> str:
     """매직 링크 URL 생성"""
+    if base_url is None:
+        base_url = settings.FRONTEND_URL
     token = create_magic_token(user_id)
     return f"{base_url}/auth/magic?token={token}"

@@ -59,13 +59,15 @@ def send_scheduled_notifications(self, batch_time: str | None = None):
     """카테고리 다이제스트 알림 발송"""
     print(f"[NOTIFICATION] Digest started (batch_time={batch_time})")
 
-    db = SessionLocal()
     try:
-        result = send_digest_notifications(db, batch_time)
-        print(f"[NOTIFICATION] Digest completed: {result.message}, sent={result.sent_count}")
-        return result.to_dict()
-    finally:
-        db.close()
+        with SessionLocal() as db:
+            result = send_digest_notifications(db, batch_time)
+            db.commit()
+            print(f"[NOTIFICATION] Digest completed: {result.message}, sent={result.sent_count}")
+            return result.to_dict()
+    except Exception as e:
+        print(f"[NOTIFICATION] Digest failed: {e}")
+        return {"status": "failed", "error": str(e)}
 
 
 @celery_app.task(bind=True, name="app.tasks.batch.send_followed_issues_notifications")
@@ -73,10 +75,12 @@ def send_followed_issues_notifications(self, batch_run_id: str):
     """팔로우 이슈 알림 발송"""
     print(f"[NOTIFICATION] Followed started (batch={batch_run_id[:8]}...)")
 
-    db = SessionLocal()
     try:
-        result = send_followed_notifications(db, batch_run_id)
-        print(f"[NOTIFICATION] Followed completed: {result.message}, sent={result.sent_count}")
-        return result.to_dict()
-    finally:
-        db.close()
+        with SessionLocal() as db:
+            result = send_followed_notifications(db, batch_run_id)
+            db.commit()
+            print(f"[NOTIFICATION] Followed completed: {result.message}, sent={result.sent_count}")
+            return result.to_dict()
+    except Exception as e:
+        print(f"[NOTIFICATION] Followed failed: {e}")
+        return {"status": "failed", "error": str(e)}

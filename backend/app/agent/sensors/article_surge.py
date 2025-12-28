@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 class ArticleSurgeSensor(BaseSensor):
     """기사량 급증 감지 센서
 
-    7일 평균 대비 2배 이상이면 급증으로 판단
+    전일 대비 2배 이상이면 급증으로 판단 (데일리 베이스)
     """
 
-    SURGE_THRESHOLD = 2.0  # 평균의 2배 이상
-    MIN_ARTICLES = 10  # 최소 기사 수
+    SURGE_THRESHOLD = 2.0  # 전일 대비 2배 이상
+    MIN_ARTICLES = 5  # 최소 기사 수 (데일리라 낮춤)
 
     @property
     def sensor_type(self) -> str:
@@ -37,27 +37,22 @@ class ArticleSurgeSensor(BaseSensor):
                 WHERE s.date = CURRENT_DATE
                   AND i.status = 'active'
             ),
-            weekly_avg AS (
+            yesterday_data AS (
                 SELECT
                     issue_id,
-                    AVG(article_count) as avg_count,
-                    STDDEV(article_count) as std_count
+                    article_count as yesterday_count
                 FROM issue_daily_snapshots
-                WHERE date >= CURRENT_DATE - INTERVAL '7 days'
-                  AND date < CURRENT_DATE
-                GROUP BY issue_id
-                HAVING COUNT(*) >= 3
+                WHERE date = CURRENT_DATE - INTERVAL '1 day'
             )
             SELECT
                 t.issue_id,
                 t.issue_name,
                 t.category,
                 t.article_count as today_count,
-                COALESCE(w.avg_count, 0) as avg_count,
-                COALESCE(w.std_count, 0) as std_count
+                COALESCE(y.yesterday_count, 0) as yesterday_count
             FROM today_snapshots t
-            LEFT JOIN weekly_avg w ON w.issue_id = t.issue_id
-            WHERE t.article_count > GREATEST(COALESCE(w.avg_count, 0) * :threshold, :min_articles)
+            LEFT JOIN yesterday_data y ON y.issue_id = t.issue_id
+            WHERE t.article_count > GREATEST(COALESCE(y.yesterday_count, 0) * :threshold, :min_articles)
         """)
 
         result = await db.execute(query, {
@@ -66,7 +61,7 @@ class ArticleSurgeSensor(BaseSensor):
         })
 
         for row in result:
-            ratio = row.today_count / max(row.avg_count, 1)
+            ratio = row.today_count / max(row.yesterday_count, 1)
             importance = min(ratio / 5, 1.0)  # 5배면 importance=1.0
 
             events.append(Event(
@@ -75,10 +70,10 @@ class ArticleSurgeSensor(BaseSensor):
                 issue_name=row.issue_name,
                 category=row.category,
                 importance=importance,
-                message=f"📈 '{row.issue_name}' 기사 급증! (평소 {row.avg_count:.0f}개 → 오늘 {row.today_count}개)",
+                message=f"📈 '{row.issue_name}' 기사 급증! (어제 {row.yesterday_count}개 → 오늘 {row.today_count}개)",
                 data={
                     "today_count": row.today_count,
-                    "avg_count": float(row.avg_count),
+                    "yesterday_count": row.yesterday_count,
                     "ratio": ratio,
                 }
             ))

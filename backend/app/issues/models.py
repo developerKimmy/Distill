@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from uuid import UUID
-from sqlalchemy import String, Text, Integer, Float, Date, DateTime, ForeignKey, func
+from sqlalchemy import String, Text, Integer, Float, Date, DateTime, ForeignKey, func, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
@@ -66,15 +66,20 @@ class IssueDailySnapshot(Base, UUIDMixin):
 class IssueArticle(Base, UUIDMixin):
     """이슈-기사 매핑"""
     __tablename__ = "issue_articles"
+    __table_args__ = (
+        # 같은 스냅샷에 동일 URL 중복 방지
+        UniqueConstraint('snapshot_id', 'url', name='uq_issue_article_snapshot_url'),
+    )
 
     snapshot_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("issue_daily_snapshots.id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    url: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     press: Mapped[str | None] = mapped_column(String(100), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -155,16 +160,22 @@ class IssueContent(Base, UUIDMixin):
 class IssueFollow(Base, UUIDMixin):
     """이슈 팔로우"""
     __tablename__ = "issue_follows"
+    __table_args__ = (
+        # 같은 유저가 같은 이슈 중복 팔로우 방지
+        UniqueConstraint('user_id', 'issue_id', name='uq_issue_follow_user_issue'),
+    )
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
     issue_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("issues.id"),
-        nullable=False
+        nullable=False,
+        index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

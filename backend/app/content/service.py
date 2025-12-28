@@ -256,13 +256,17 @@ class ContentService:
             return content_directions[0]
 
         if needs:
-            prompt = title_generation_prompt(issue_name, needs)
-            response = self.llm.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=100
-            )
-            return response.choices[0].message.content.strip()
+            try:
+                prompt = title_generation_prompt(issue_name, needs)
+                response = self.llm.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=100
+                )
+                if response.choices and response.choices[0].message.content:
+                    return response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"[CONTENT] 제목 생성 실패: {e}")
 
         return f"{issue_name} 총정리"
 
@@ -300,10 +304,23 @@ class ContentService:
             similar_text=similar_text
         )
 
-        response = self.llm.chat.completions.create(
-            model="deepseek-chat",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000
-        )
+        try:
+            response = self.llm.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2000
+            )
 
-        return response.choices[0].message.content
+            if not response.choices or not response.choices[0].message.content:
+                raise ValueError("LLM 응답이 비어있음")
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            print(f"[CONTENT] LLM 콘텐츠 생성 실패: {e}")
+            # 기본 콘텐츠 반환 (기사 요약)
+            fallback = f"# {issue_name}\n\n"
+            fallback += f"**{today_str} 기준 주요 내용**\n\n"
+            for a in articles[:5]:
+                fallback += f"- {a.get('title', '')}\n"
+            return fallback
