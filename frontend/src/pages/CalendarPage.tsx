@@ -19,7 +19,6 @@ import {
   min,
 } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { getGlobalBatchStatus } from '../api/batch';
 import { getIssuesForCalendar, getBatchDates, type CalendarIssue } from '../api/issues';
 import { WEEKDAYS, getCategoryColors } from '../utils/constants';
 import { parseLocalDate } from '../utils/dateFormat';
@@ -145,11 +144,6 @@ export default function CalendarPage() {
 
   const today = startOfDay(new Date());
 
-  const { data: batchStatus } = useQuery({
-    queryKey: ['globalBatchStatus'],
-    queryFn: getGlobalBatchStatus,
-  });
-
   const { data: issues } = useQuery({
     queryKey: ['issues-calendar'],
     queryFn: getIssuesForCalendar,
@@ -198,14 +192,6 @@ export default function CalendarPage() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      {/* 배치 상태 */}
-      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs sm:text-sm text-gray-500 gap-1">
-        <span>
-          마지막 수집: {batchStatus?.lastRunAt ? new Date(batchStatus.lastRunAt).toLocaleString('ko-KR') : '-'}
-        </span>
-        <span>다음 수집: {batchStatus?.schedule.join(', ')}</span>
-      </div>
-
       {/* 캘린더 */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {/* 헤더 */}

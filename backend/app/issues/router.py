@@ -296,6 +296,7 @@ async def get_daily_digest(
         total_articles=data["total_articles"],
         new_issues_count=data["new_issues_count"],
         updated_at=data["updated_at"],
+        digest_summary=data.get("digest_summary"),
         categories=[
             DigestCategoryGroup(
                 category=cat["category"],

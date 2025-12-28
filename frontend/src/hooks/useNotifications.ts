@@ -16,7 +16,7 @@ export function useUnreadCount() {
   return useQuery({
     queryKey: UNREAD_COUNT_KEY,
     queryFn: getUnreadCount,
-    staleTime: 30 * 1000, // 30초
+    staleTime: 0, // 항상 fresh하게
     refetchInterval: 60 * 1000, // 1분마다 폴링
   });
 }

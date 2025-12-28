@@ -959,10 +959,10 @@ class IssueService:
 
             total_articles += snapshot.article_count
 
-        # 마지막 업데이트 시간 (가장 최근 스냅샷의 updated_at)
+        # 마지막 업데이트 시간 (가장 최근 스냅샷의 created_at)
         updated_at = None
         if snapshots:
-            updated_at = max(s.updated_at for s in snapshots if s.updated_at)
+            updated_at = max(s.created_at for s in snapshots if s.created_at)
 
         # 카테고리별 데이터 구조화
         categories = []
@@ -977,6 +977,14 @@ class IssueService:
                     "total_articles": sum(i["article_count"] for i in issues)
                 })
 
+        # 다이제스트 요약 조회
+        from app.issues.models import DailyDigest
+        digest_stmt = select(DailyDigest).where(DailyDigest.date == digest_date)
+        digest_result = await self.db.execute(digest_stmt)
+        daily_digest = digest_result.scalar_one_or_none()
+
+        digest_summary = daily_digest.summary if daily_digest else None
+
         return {
             "date": digest_date,
             "total_issues": len(snapshots),
@@ -984,4 +992,5 @@ class IssueService:
             "new_issues_count": new_issues_count,
             "categories": categories,
             "updated_at": updated_at,
+            "digest_summary": digest_summary,
         }

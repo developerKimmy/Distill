@@ -157,6 +157,22 @@ class IssueContent(Base, UUIDMixin):
     snapshot = relationship("IssueDailySnapshot", back_populates="contents")
 
 
+class DailyDigest(Base, UUIDMixin):
+    """일간 다이제스트 요약"""
+    __tablename__ = "daily_digests"
+    __table_args__ = (
+        UniqueConstraint('date', name='uq_daily_digest_date'),
+    )
+
+    date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)  # LLM 생성 요약
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+
 class IssueFollow(Base, UUIDMixin):
     """이슈 팔로우"""
     __tablename__ = "issue_follows"

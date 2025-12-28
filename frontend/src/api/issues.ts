@@ -96,6 +96,7 @@ export interface DailyDigest {
   newIssuesCount: number;
   categories: DigestCategory[];
   updatedAt: string | null;
+  digestSummary: string | null;
 }
 
 // 데일리 다이제스트 조회

@@ -123,3 +123,4 @@ class DailyDigestResponse(BaseSchema):
     new_issues_count: int
     categories: list[DigestCategoryGroup]
     updated_at: datetime | None = None  # 마지막 업데이트 시간
+    digest_summary: str | None = None  # LLM 생성 다이제스트 요약

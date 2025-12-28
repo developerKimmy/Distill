@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getDailyDigest, type DigestIssue, type DigestCategory } from '../api/issues';
 import { LoadingFallback, CategoryBadge } from '../components/common';
 import { getCategoryColors } from '../utils/constants';
@@ -54,8 +56,8 @@ function CategorySection({ category }: { category: DigestCategory }) {
         </span>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        {category.issues.map((issue) => (
-          <IssueCard key={issue.id} issue={issue} />
+        {category.issues.map((issue, idx) => (
+          <IssueCard key={`${category.category}-${issue.id}-${idx}`} issue={issue} />
         ))}
       </div>
     </div>
@@ -90,7 +92,7 @@ export default function DailyDigestPage() {
         <div className="max-w-4xl mx-auto">
           {/* 헤더 */}
           <div className="mb-6">
-            <Link to="/calendar" className="text-xs sm:text-sm text-gray-500 hover:text-gray-700">
+            <Link to="/" className="text-xs sm:text-sm text-gray-500 hover:text-gray-700">
               ← 캘린더로 돌아가기
             </Link>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mt-2">
@@ -118,6 +120,23 @@ export default function DailyDigestPage() {
               <div className="text-xs text-gray-500">총 기사</div>
             </div>
           </div>
+
+          {/* 다이제스트 요약 */}
+          {data.digestSummary && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+              <div className="prose prose-sm max-w-none
+                prose-headings:text-gray-900 prose-h1:text-lg prose-h1:font-bold prose-h1:mt-4 prose-h1:mb-2
+                prose-h2:text-base prose-h2:font-semibold prose-h2:mt-3 prose-h2:mb-1 prose-h2:text-amber-800
+                prose-h3:font-medium prose-h3:mt-2 prose-h3:text-gray-800
+                prose-p:text-gray-700 prose-li:text-gray-700
+                prose-table:text-xs prose-th:bg-amber-100 prose-th:p-2 prose-td:p-2 prose-td:border-amber-200
+                prose-hr:border-amber-200">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {data.digestSummary}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
 
           {/* 카테고리별 이슈 */}
           <div>
