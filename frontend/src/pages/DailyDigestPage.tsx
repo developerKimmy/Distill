@@ -45,8 +45,6 @@ function IssueCard({ issue }: { issue: DigestIssue }) {
 }
 
 function CategorySection({ category }: { category: DigestCategory }) {
-  const colors = getCategoryColors(category.category);
-
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-3">
@@ -66,7 +64,6 @@ function CategorySection({ category }: { category: DigestCategory }) {
 
 export default function DailyDigestPage() {
   const { date } = useParams<{ date: string }>();
-  const navigate = useNavigate();
 
   const displayDate = useMemo(() => {
     if (!date) return '';
