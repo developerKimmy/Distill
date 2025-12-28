@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 from app.core.celery_app import celery_app
-from app.core.database import AsyncSessionLocal, SessionLocal
+from app.core.database import create_async_session_factory, SessionLocal
 from app.batch.service import GlobalBatchService
 from app.tasks.notifications import send_digest_notifications, send_followed_notifications
 
@@ -31,8 +31,14 @@ def run_global_batch(self, triggered_by: str = "scheduled"):
 
 
 async def _run_batch_async(triggered_by: str) -> dict:
-    """비동기 배치 실행"""
-    async with AsyncSessionLocal() as db:
+    """비동기 배치 실행
+
+    Celery에서 asyncio.run()으로 호출되므로 매번 새 엔진 생성 필요
+    """
+    # 매번 새 세션 팩토리 생성 (이벤트 루프 충돌 방지)
+    AsyncSession = create_async_session_factory()
+
+    async with AsyncSession() as db:
         service = GlobalBatchService(db)
         batch_run = await service.run(triggered_by=triggered_by)
 

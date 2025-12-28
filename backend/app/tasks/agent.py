@@ -3,7 +3,7 @@ import asyncio
 import logging
 
 from app.core.celery_app import celery_app
-from app.core.database import AsyncSessionLocal
+from app.core.database import create_async_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,10 @@ def run_agent_cycle(self):
     async def _run():
         from app.agent.main import MonitoringAgent
 
-        # 태스크마다 새 세션 생성 (세션 충돌 방지)
-        async with AsyncSessionLocal() as db:
+        # Celery에서 asyncio.run()으로 호출되므로 매번 새 엔진 생성 필요
+        AsyncSession = create_async_session_factory()
+
+        async with AsyncSession() as db:
             try:
                 agent = MonitoringAgent()
                 result = await agent.run_cycle(db)

@@ -64,11 +64,6 @@ export default function IssuePage() {
     );
   }, [issue?.snapshots]);
 
-  const maxArticleCount = useMemo(() => {
-    if (sortedSnapshots.length === 0) return 1;
-    return Math.max(...sortedSnapshots.map((s) => s.articleCount));
-  }, [sortedSnapshots]);
-
   const selectedSnapshot = selectedSnapshotId
     ? sortedSnapshots.find((s) => s.id === selectedSnapshotId) || sortedSnapshots[0]
     : sortedSnapshots[0];
@@ -112,36 +107,24 @@ export default function IssuePage() {
             </div>
           </div>
 
-          {/* 추이 그래프 */}
-          <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
-            <h2 className="text-xs sm:text-sm font-medium text-gray-700 mb-3 sm:mb-4">
-              기사량 추이
-            </h2>
-            <div className="flex items-end gap-1 sm:gap-2 h-24 sm:h-32 overflow-x-auto">
-              {[...sortedSnapshots].reverse().map((snapshot) => {
-                const height = (snapshot.articleCount / maxArticleCount) * 100;
-                const isSelected = selectedSnapshot?.id === snapshot.id;
-
-                return (
-                  <button
-                    key={snapshot.id}
-                    onClick={() => setSelectedSnapshotId(snapshot.id)}
-                    className="flex-1 min-w-[28px] sm:min-w-[36px] flex flex-col items-center gap-1 group"
-                  >
-                    <div
-                      className={`w-full rounded-t transition-colors ${
-                        isSelected ? 'bg-amber-500' : 'bg-gray-300 group-hover:bg-gray-400'
-                      }`}
-                      style={{ height: `${height}%`, minHeight: '4px' }}
-                    />
-                    <span className="text-[10px] sm:text-xs text-gray-500">
-                      {formatShortDate(snapshot.date)}
-                    </span>
-                  </button>
-                );
-              })}
+          {/* 날짜 선택 */}
+          {sortedSnapshots.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {sortedSnapshots.map((snapshot) => (
+                <button
+                  key={snapshot.id}
+                  onClick={() => setSelectedSnapshotId(snapshot.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs sm:text-sm whitespace-nowrap transition-colors ${
+                    selectedSnapshot?.id === snapshot.id
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {formatShortDate(snapshot.date)}
+                </button>
+              ))}
             </div>
-          </div>
+          )}
 
           {/* 선택된 날짜 정보 */}
           {selectedSnapshot && (

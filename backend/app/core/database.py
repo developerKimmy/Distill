@@ -56,16 +56,36 @@ def get_db() -> Generator[Session, None, None]:
 
 # 비동기 엔진 (asyncpg)
 # SSL이 필요하면 connect_args로 전달
-connect_args = {}
-if NEEDS_SSL:
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    connect_args["ssl"] = ssl_context
+def _get_ssl_connect_args():
+    if NEEDS_SSL:
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        return {"ssl": ssl_context}
+    return {}
 
+
+def create_async_session_factory():
+    """Celery 태스크용: 매번 새 엔진으로 세션 팩토리 생성
+
+    asyncio.run()이 새 이벤트 루프를 만들기 때문에,
+    기존 엔진을 재사용하면 'attached to a different loop' 에러 발생
+    """
+    engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        connect_args=_get_ssl_connect_args(),
+    )
+    return async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
+# FastAPI용 글로벌 엔진 (단일 이벤트 루프에서 사용)
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    connect_args=connect_args,
+    connect_args=_get_ssl_connect_args(),
 )
 AsyncSessionLocal = async_sessionmaker(
     async_engine,
