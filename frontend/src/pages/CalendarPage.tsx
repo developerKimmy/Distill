@@ -276,7 +276,21 @@ export default function CalendarPage() {
                         ${disabled ? 'bg-gray-50 cursor-default' : 'cursor-pointer hover:bg-gray-50'}
                       `}
                     >
-                      <div className="flex justify-end">
+                      <div className="flex items-start justify-between">
+                        {/* 브리핑 버튼 - 활성 날짜만 표시 */}
+                        {isCurrentMonth && !disabled && activeDates.has(format(date, 'yyyy-MM-dd')) ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/digest/${format(date, 'yyyy-MM-dd')}`);
+                            }}
+                            className="text-[8px] sm:text-[10px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors"
+                          >
+                            브리핑
+                          </button>
+                        ) : (
+                          <div />
+                        )}
                         <span
                           className={`
                             inline-flex items-center justify-center w-5 h-5 sm:w-7 sm:h-7 text-xs sm:text-sm

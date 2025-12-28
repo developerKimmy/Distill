@@ -9,6 +9,7 @@ import CalendarPage from './pages/CalendarPage';
 import ReportPage from './pages/ReportPage';
 import IssuePage from './pages/IssuePage';
 import IssueListPage from './pages/IssueListPage';
+import DailyDigestPage from './pages/DailyDigestPage';
 import SettingsPage from './pages/SettingsPage';
 import NotificationsPage from './pages/NotificationsPage';
 
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<CalendarPage />} />
             <Route path="report/:date" element={<ReportPage />} />
+            <Route path="digest/:date" element={<DailyDigestPage />} />
             <Route path="issues" element={<IssueListPage />} />
             <Route path="issues/:issueId" element={<IssuePage />} />
             {/* 로그인 필요 페이지 */}

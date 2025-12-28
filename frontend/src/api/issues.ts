@@ -70,3 +70,36 @@ export const unfollowIssue = async (issueId: string): Promise<{ message: string;
   const { data } = await client.delete(`/issues/${issueId}/follow`);
   return data;
 };
+
+// 데일리 다이제스트 타입
+export interface DigestIssue {
+  id: string;
+  name: string;
+  category: string | null;
+  articleCount: number;
+  summary: string | null;
+  contentTitle: string | null;
+  contentPreview: string | null;
+  isNew: boolean;
+}
+
+export interface DigestCategory {
+  category: string;
+  issues: DigestIssue[];
+  totalArticles: number;
+}
+
+export interface DailyDigest {
+  date: string;
+  totalIssues: number;
+  totalArticles: number;
+  newIssuesCount: number;
+  categories: DigestCategory[];
+  updatedAt: string | null;
+}
+
+// 데일리 다이제스트 조회
+export const getDailyDigest = async (date: string): Promise<DailyDigest> => {
+  const { data } = await client.get(`/reports/digest/${date}`);
+  return data;
+};

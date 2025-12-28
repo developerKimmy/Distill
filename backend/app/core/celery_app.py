@@ -47,6 +47,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=18, minute=0),
         "args": ("scheduled",)
     },
+    # 아침 데일리 다이제스트 발송 (매일 오전 8시)
+    # 어제 있었던 이슈를 요약해서 이메일로 발송
+    "send-morning-digest": {
+        "task": "app.tasks.batch.send_morning_digest",
+        "schedule": crontab(hour=8, minute=0),
+    },
 }
 
 celery_app.autodiscover_tasks(["app.tasks"])

@@ -427,3 +427,121 @@ class EmailService:
         except Exception as e:
             print(f"[EMAIL] 발송 실패: {e}")
             return False
+
+    def send_daily_digest(
+        self,
+        recipient: str,
+        digest_date: str,
+        total_issues: int,
+        new_issues_count: int,
+        total_articles: int,
+        categories: list[dict],
+        base_url: str = "https://kimmykim.dev"
+    ) -> bool:
+        """데일리 다이제스트 이메일 발송
+
+        Args:
+            recipient: 수신자 이메일
+            digest_date: 다이제스트 날짜 (YYYY-MM-DD)
+            total_issues: 총 이슈 수
+            new_issues_count: 신규 이슈 수
+            total_articles: 총 기사 수
+            categories: 카테고리별 이슈 [{category, issues: [{name, article_count, is_new}], total_articles}]
+            base_url: 사이트 기본 URL
+        """
+        if not self.gmail_user or not self.gmail_app_password:
+            print("[EMAIL] Gmail 설정 없음, 이메일 발송 스킵")
+            return False
+
+        try:
+            # 날짜 포맷
+            from datetime import datetime
+            date_obj = datetime.strptime(digest_date, "%Y-%m-%d")
+            date_display = date_obj.strftime("%Y년 %m월 %d일")
+
+            subject = f"[DSTILL] {date_display} 브리핑 - {total_issues}개 이슈"
+
+            # 카테고리별 이슈 HTML 생성
+            categories_html = ""
+            for cat in categories:
+                issues_list = ""
+                for issue in cat["issues"][:5]:  # 카테고리당 최대 5개
+                    new_badge = '<span style="background: #fee2e2; color: #dc2626; padding: 1px 6px; border-radius: 10px; font-size: 10px; margin-left: 4px;">NEW</span>' if issue.get("is_new") else ""
+                    issues_list += f"""
+                    <div style="padding: 8px 0; border-bottom: 1px solid #f3f4f6;">
+                        <span style="font-weight: 500; color: #1f2937;">{issue['name']}</span>{new_badge}
+                        <span style="color: #9ca3af; font-size: 12px; margin-left: 8px;">기사 {issue.get('article_count', 0)}개</span>
+                    </div>
+                    """
+
+                if len(cat["issues"]) > 5:
+                    issues_list += f'<div style="padding: 8px 0; color: #6b7280; font-size: 12px;">외 {len(cat["issues"]) - 5}개 이슈...</div>'
+
+                categories_html += f"""
+                <div style="margin-bottom: 20px;">
+                    <div style="background: #fef3c7; padding: 6px 12px; border-radius: 6px; display: inline-block; margin-bottom: 8px;">
+                        <span style="font-weight: 600; color: #92400e;">{cat['category']}</span>
+                        <span style="color: #d97706; font-size: 12px; margin-left: 8px;">{len(cat['issues'])}개 이슈</span>
+                    </div>
+                    {issues_list}
+                </div>
+                """
+
+            html_body = f"""
+            <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f9fafb;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <h2 style="color: #1b1b32; margin-bottom: 4px;">📰 {date_display} 브리핑</h2>
+                    <p style="color: #6b7280; margin-top: 0; margin-bottom: 20px;">어제 있었던 주요 이슈를 한눈에 확인하세요</p>
+
+                    <!-- 통계 요약 -->
+                    <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+                        <div style="flex: 1; background: #f9fafb; padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #1f2937;">{total_issues}</div>
+                            <div style="font-size: 12px; color: #6b7280;">총 이슈</div>
+                        </div>
+                        <div style="flex: 1; background: #fef2f2; padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #dc2626;">{new_issues_count}</div>
+                            <div style="font-size: 12px; color: #6b7280;">신규 이슈</div>
+                        </div>
+                        <div style="flex: 1; background: #fffbeb; padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: #d97706;">{total_articles}</div>
+                            <div style="font-size: 12px; color: #6b7280;">총 기사</div>
+                        </div>
+                    </div>
+
+                    <!-- 카테고리별 이슈 -->
+                    {categories_html}
+
+                    <!-- CTA 버튼 -->
+                    <div style="text-align: center; margin-top: 24px;">
+                        <a href="{base_url}/digest/{digest_date}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                            전체 브리핑 보기 →
+                        </a>
+                    </div>
+
+                    <p style="color: #9ca3af; font-size: 12px; margin-top: 24px; text-align: center;">
+                        이 메일은 DSTILL 데일리 다이제스트입니다.
+                    </p>
+                </div>
+            </body>
+            </html>
+            """
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = self.gmail_user
+            msg["To"] = recipient
+            msg.attach(MIMEText(html_body, "html"))
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.gmail_user, self.gmail_app_password)
+                server.sendmail(self.gmail_user, recipient, msg.as_string())
+
+            print(f"[EMAIL] 데일리 다이제스트 발송: {recipient} ({digest_date})")
+            return True
+
+        except Exception as e:
+            print(f"[EMAIL] 다이제스트 발송 실패: {e}")
+            return False

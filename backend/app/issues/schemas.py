@@ -92,3 +92,34 @@ class DailyReportResponse(BaseSchema):
     date: date
     snapshots: list[DailySnapshotWithIssue]
     total_issues: int
+
+
+# ===== 데일리 다이제스트 =====
+
+class DigestIssueItem(BaseSchema):
+    """다이제스트용 이슈 아이템"""
+    id: str
+    name: str
+    category: str | None
+    article_count: int
+    summary: str | None
+    content_title: str | None = None  # 생성된 콘텐츠 제목
+    content_preview: str | None = None  # 콘텐츠 미리보기 (200자)
+    is_new: bool = False  # 오늘 처음 등장한 이슈
+
+
+class DigestCategoryGroup(BaseSchema):
+    """카테고리별 이슈 그룹"""
+    category: str
+    issues: list[DigestIssueItem]
+    total_articles: int
+
+
+class DailyDigestResponse(BaseSchema):
+    """데일리 다이제스트 응답"""
+    date: date
+    total_issues: int
+    total_articles: int
+    new_issues_count: int
+    categories: list[DigestCategoryGroup]
+    updated_at: datetime | None = None  # 마지막 업데이트 시간

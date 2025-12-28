@@ -16,6 +16,9 @@ from app.issues.schemas import (
     DailySnapshotWithIssue,
     IssueResponse,
     CalendarIssueResponse,
+    DailyDigestResponse,
+    DigestCategoryGroup,
+    DigestIssueItem,
 )
 from app.auth.models import User
 from app.auth.router import fastapi_users
@@ -272,4 +275,36 @@ async def get_daily_report(
             for snapshot in snapshots
         ],
         total_issues=len(snapshots)
+    )
+
+
+@report_router.get("/digest/{digest_date}", response_model=DailyDigestResponse)
+async def get_daily_digest(
+        digest_date: date,
+        db: AsyncSession = Depends(get_async_session),
+):
+    """데일리 다이제스트 조회 - 비로그인 허용
+
+    카테고리별로 그룹핑된 이슈 목록과 통계 반환
+    """
+    service = IssueService(db)
+    data = await service.get_daily_digest(digest_date)
+
+    return DailyDigestResponse(
+        date=data["date"],
+        total_issues=data["total_issues"],
+        total_articles=data["total_articles"],
+        new_issues_count=data["new_issues_count"],
+        updated_at=data["updated_at"],
+        categories=[
+            DigestCategoryGroup(
+                category=cat["category"],
+                total_articles=cat["total_articles"],
+                issues=[
+                    DigestIssueItem(**issue)
+                    for issue in cat["issues"]
+                ]
+            )
+            for cat in data["categories"]
+        ]
     )

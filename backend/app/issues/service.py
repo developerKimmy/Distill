@@ -897,3 +897,91 @@ class IssueService:
             .order_by(IssueFollow.created_at.desc())
         )
         return list(result.scalars().all())
+
+    # ========== 데일리 다이제스트 ==========
+
+    async def get_daily_digest(self, digest_date: date) -> dict:
+        """데일리 다이제스트 데이터 조회
+
+        Returns:
+            카테고리별로 그룹핑된 이슈 목록 + 통계
+        """
+        from collections import defaultdict
+
+        # 해당 날짜의 모든 스냅샷 조회 (콘텐츠 포함)
+        stmt = (
+            select(IssueDailySnapshot)
+            .join(Issue)
+            .options(
+                selectinload(IssueDailySnapshot.issue),
+                selectinload(IssueDailySnapshot.contents)
+            )
+            .where(IssueDailySnapshot.date == digest_date)
+            .order_by(IssueDailySnapshot.article_count.desc())
+        )
+        result = await self.db.execute(stmt)
+        snapshots = list(result.scalars().all())
+
+        # 카테고리별 그룹핑
+        by_category: dict[str, list] = defaultdict(list)
+        total_articles = 0
+        new_issues_count = 0
+
+        for snapshot in snapshots:
+            issue = snapshot.issue
+            category = issue.category or "기타"
+
+            # 오늘 처음 등장한 이슈인지 확인
+            is_new = issue.first_seen_at == digest_date
+
+            if is_new:
+                new_issues_count += 1
+
+            # 콘텐츠 정보
+            content_title = None
+            content_preview = None
+            if snapshot.contents:
+                latest_content = snapshot.contents[0]
+                content_title = latest_content.title
+                # 콘텐츠 미리보기 (200자)
+                content_preview = latest_content.content[:200] + "..." if len(latest_content.content) > 200 else latest_content.content
+
+            by_category[category].append({
+                "id": str(issue.id),
+                "name": issue.name,
+                "category": category,
+                "article_count": snapshot.article_count,
+                "summary": snapshot.summary,
+                "content_title": content_title,
+                "content_preview": content_preview,
+                "is_new": is_new,
+            })
+
+            total_articles += snapshot.article_count
+
+        # 마지막 업데이트 시간 (가장 최근 스냅샷의 updated_at)
+        updated_at = None
+        if snapshots:
+            updated_at = max(s.updated_at for s in snapshots if s.updated_at)
+
+        # 카테고리별 데이터 구조화
+        categories = []
+        category_order = ["정치", "경제", "사회", "세계", "IT/과학", "연예", "스포츠", "기타"]
+
+        for cat in category_order:
+            if cat in by_category:
+                issues = by_category[cat]
+                categories.append({
+                    "category": cat,
+                    "issues": issues,
+                    "total_articles": sum(i["article_count"] for i in issues)
+                })
+
+        return {
+            "date": digest_date,
+            "total_issues": len(snapshots),
+            "total_articles": total_articles,
+            "new_issues_count": new_issues_count,
+            "categories": categories,
+            "updated_at": updated_at,
+        }
