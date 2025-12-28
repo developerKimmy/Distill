@@ -35,7 +35,7 @@ export default function Layout() {
           isActive('/') ? 'text-amber-600 font-medium' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
-        캘린더
+        최근 이슈
       </Link>
       <Link
         to="/issues"

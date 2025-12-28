@@ -1,21 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getGlobalBatchStatus } from '../api/batch';
 import { getNotificationSettings, updateNotificationSettings } from '../api/settings';
 import { AVAILABLE_CATEGORIES } from '../types';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
-  const [times, setTimes] = useState<string[]>(['09:00', '18:00']);
   const [enabled, setEnabled] = useState(true);
-  const [newTime, setNewTime] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
-
-  // 글로벌 배치 상태 조회 (read-only)
-  const { data: batchStatus, isLoading: loadingBatch } = useQuery({
-    queryKey: ['globalBatchStatus'],
-    queryFn: getGlobalBatchStatus,
-  });
 
   // 알림 설정 조회
   const { data: notificationSettings, isLoading: loadingSettings } = useQuery({
@@ -27,7 +18,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (notificationSettings) {
       setEnabled(notificationSettings.enabled);
-      setTimes(notificationSettings.times || []);
       setCategories(notificationSettings.categories || []);
     }
   }, [notificationSettings]);
@@ -36,12 +26,7 @@ export default function SettingsPage() {
   const hasChanges = useMemo(() => {
     if (!notificationSettings) return false;
 
-    const serverTimes = notificationSettings.times || [];
     const serverCategories = notificationSettings.categories || [];
-
-    const timesChanged =
-      times.length !== serverTimes.length ||
-      times.some((t) => !serverTimes.includes(t));
 
     const categoriesChanged =
       categories.length !== serverCategories.length ||
@@ -49,30 +34,17 @@ export default function SettingsPage() {
 
     const enabledChanged = enabled !== notificationSettings.enabled;
 
-    return timesChanged || categoriesChanged || enabledChanged;
-  }, [notificationSettings, times, categories, enabled]);
+    return categoriesChanged || enabledChanged;
+  }, [notificationSettings, categories, enabled]);
 
   // 알림 설정 수정
   const updateMutation = useMutation({
-    mutationFn: (data: { enabled?: boolean; times?: string[]; categories?: string[] }) =>
+    mutationFn: (data: { enabled?: boolean; categories?: string[] }) =>
       updateNotificationSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationSettings'] });
     },
   });
-
-  const handleAddTime = () => {
-    if (newTime && !times.includes(newTime)) {
-      const updated = [...times, newTime].sort();
-      setTimes(updated);
-      setNewTime('');
-    }
-  };
-
-  const handleRemoveTime = (time: string) => {
-    const updated = times.filter((t) => t !== time);
-    setTimes(updated);
-  };
 
   const handleToggle = () => {
     setEnabled(!enabled);
@@ -94,7 +66,6 @@ export default function SettingsPage() {
   const handleSave = () => {
     updateMutation.mutate({
       enabled,
-      times,
       categories,
     });
   };
@@ -102,12 +73,11 @@ export default function SettingsPage() {
   const handleReset = () => {
     if (notificationSettings) {
       setEnabled(notificationSettings.enabled);
-      setTimes(notificationSettings.times || []);
       setCategories(notificationSettings.categories || []);
     }
   };
 
-  if (loadingBatch || loadingSettings) {
+  if (loadingSettings) {
     return (
       <div className="flex items-center justify-center py-12">
         <p className="text-gray-500">로딩 중...</p>
@@ -119,36 +89,6 @@ export default function SettingsPage() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">설정</h1>
 
-      {/* 글로벌 배치 상태 (read-only) */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">배치 실행 정보</h2>
-        <p className="text-sm text-gray-600 mb-2">
-          이슈는 매일 다음 시간에 자동으로 수집됩니다:
-        </p>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {batchStatus?.schedule.map((time) => (
-            <span
-              key={time}
-              className="inline-flex items-center px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm font-medium"
-            >
-              {time}
-            </span>
-          ))}
-        </div>
-        <div className="flex justify-between text-sm text-gray-500">
-          <span>마지막 실행</span>
-          <span className="text-gray-900">
-            {batchStatus?.lastRunAt
-              ? new Date(batchStatus.lastRunAt).toLocaleString('ko-KR')
-              : '없음'}
-          </span>
-        </div>
-        <div className="flex justify-between text-sm text-gray-500 mt-1">
-          <span>총 실행 횟수</span>
-          <span className="text-gray-900">{batchStatus?.totalRuns ?? 0}회</span>
-        </div>
-      </div>
-
       {/* 알림 설정 */}
       <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
         <h2 className="text-lg font-semibold text-gray-800">이메일 알림 설정</h2>
@@ -158,7 +98,7 @@ export default function SettingsPage() {
           <div>
             <p className="font-medium text-gray-900">이메일 알림 받기</p>
             <p className="text-sm text-gray-500">
-              새로운 이슈가 수집되면 이메일로 알림을 받습니다.
+              새로운 이슈가 발견되면 이메일로 알림을 받습니다.
             </p>
           </div>
           <button
@@ -174,52 +114,6 @@ export default function SettingsPage() {
             />
           </button>
         </div>
-
-        {/* 알림 시간 목록 (enabled일 때만 표시) */}
-        {enabled && (
-          <div>
-            <p className="font-medium text-gray-900 mb-3">알림 받을 시간</p>
-            <p className="text-sm text-gray-500 mb-3">
-              선택한 시간에 배치 결과 알림을 이메일로 받습니다.
-            </p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {times.map((time) => (
-                <span
-                  key={time}
-                  className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full text-sm"
-                >
-                  {time}
-                  <button
-                    onClick={() => handleRemoveTime(time)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    x
-                  </button>
-                </span>
-              ))}
-              {times.length === 0 && (
-                <span className="text-sm text-gray-500">설정된 시간이 없습니다.</span>
-              )}
-            </div>
-
-            {/* 시간 추가 */}
-            <div className="flex gap-2">
-              <input
-                type="time"
-                value={newTime}
-                onChange={(e) => setNewTime(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <button
-                onClick={handleAddTime}
-                disabled={!newTime}
-                className="px-4 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50"
-              >
-                추가
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* 카테고리 선택 (enabled일 때만 표시) */}
         {enabled && (
