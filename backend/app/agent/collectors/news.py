@@ -55,13 +55,13 @@ class NewsCollector:
         except Exception as e:
             logger.error(f"Naver Search 수집 실패: {e}")
 
-        # 3. Tavily (급증 이슈만, 비용 절약)
+        # 3. Tavily (오늘 새로 생성된 이슈만 - 환각 방지용 크로스체크)
         if self.tavily:
             logger.info("Tavily 검색 시작...")
             try:
-                hot_issues = await self._get_hot_issues(db)
+                new_issues = await self._get_new_issues_today(db)
                 tavily_articles = []
-                for issue in hot_issues[:3]:  # 최대 3개만 (비용 절약)
+                for issue in new_issues:  # 새 이슈 전부 체크
                     try:
                         results = await self.tavily.search(issue.name, max_results=5)
                         for r in results:
@@ -75,7 +75,7 @@ class NewsCollector:
                     except Exception as e:
                         logger.warning(f"Tavily 검색 실패 ({issue.name}): {e}")
                 all_articles.extend(tavily_articles)
-                logger.info(f"Tavily: {len(tavily_articles)}개 수집")
+                logger.info(f"Tavily: {len(tavily_articles)}개 수집 (새 이슈 {len(new_issues)}개)")
             except Exception as e:
                 logger.error(f"Tavily 수집 실패: {e}")
 
@@ -100,19 +100,13 @@ class NewsCollector:
         result = await db.execute(query)
         return list(result.scalars().all())
 
-    async def _get_hot_issues(self, db: AsyncSession, limit: int = 5) -> list[Issue]:
-        """급증 이슈 조회 (기사량 많은 순)"""
-        # 간단히 최근 이슈 중 기사량 많은 것으로
-        from sqlalchemy import func
-        from app.issues.models import IssueDailySnapshot
-
+    async def _get_new_issues_today(self, db: AsyncSession) -> list[Issue]:
+        """오늘 새로 생성된 이슈 조회 (환각 방지용 크로스체크)"""
         today = date.today()
         query = (
             select(Issue)
-            .join(IssueDailySnapshot)
-            .where(IssueDailySnapshot.date == today)
-            .order_by(IssueDailySnapshot.article_count.desc())
-            .limit(limit)
+            .where(Issue.first_seen_at >= datetime.combine(today, datetime.min.time()))
+            .order_by(Issue.created_at.desc())
         )
         result = await db.execute(query)
         return list(result.scalars().all())
