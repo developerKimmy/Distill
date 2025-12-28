@@ -83,3 +83,18 @@ async def send_notifications_cron(
         task_id=task.id,
         status="queued"
     )
+
+
+@router.post("/agent/run", response_model=BatchTaskResponse)
+async def run_agent_cron(
+    _: bool = Depends(verify_cron_secret)
+):
+    """Agent 실행 (테스트/Cron용, 인증 불필요)"""
+    from app.tasks.agent import run_agent_cycle
+
+    task = run_agent_cycle.delay()
+
+    return BatchTaskResponse(
+        task_id=task.id,
+        status="queued"
+    )
