@@ -108,6 +108,10 @@ class MonitoringAgent:
 
             await db.commit()
 
+            # 5. 이메일 발송 (버퍼에 모인 것 한번에)
+            emails_sent = self.notifier.flush_emails()
+            logger.info(f"Emails sent: {emails_sent}")
+
             agent_run.notifications_sent = notifications_sent
             agent_run.status = "completed"
             agent_run.completed_at = datetime.now(KST)

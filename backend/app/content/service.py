@@ -9,7 +9,7 @@ from openai import OpenAI
 from app.issues.models import (
     IssueDailySnapshot, IssueEmbedding, IssueContent
 )
-from app.core.agent.tools import EmbeddingProvider, NaverNewsProvider
+from app.core.agent.tools import EmbeddingProvider, NaverNewsProvider, GapAnalyzer
 from app.core.config import settings
 from app.core.prompts import title_generation_prompt, content_generation_prompt
 
@@ -21,6 +21,7 @@ class ContentService:
         self.db = db
         self.embedding_provider = EmbeddingProvider()
         self.news_provider = NaverNewsProvider()
+        self.gap_analyzer = GapAnalyzer()
         self.llm = OpenAI(
             api_key=settings.DEEPSEEK_API_KEY,
             base_url="https://api.deepseek.com/v1"
@@ -182,43 +183,52 @@ class ContentService:
         if not content:
             return False
 
-        # 원본 기사에서 팩트 추출
+        # 1. 원본 기사 데이터 준비
+        articles_data = [
+            {"title": a.title, "description": a.description or ""}
+            for a in content.snapshot.articles
+        ]
+        issue_name = content.snapshot.issue.name if content.snapshot.issue else "Unknown"
+
+        # 2. GapAnalyzer로 정보 충분도 분석
+        gap_result = self.gap_analyzer.analyze(
+            issue_name=issue_name,
+            articles=articles_data,
+            keywords=None
+        )
+        gap_confidence = gap_result.confidence  # 0.0 ~ 1.0
+
+        # 3. 원본 기사 키워드 매칭 검증
         original_facts = set()
         for article in content.snapshot.articles:
-            # 기사 제목과 설명에서 핵심 정보 추출
             if article.title:
                 original_facts.add(article.title.lower())
             if article.description:
                 original_facts.add(article.description.lower())
 
-        # 생성된 콘텐츠에서 검증할 내용 추출
         generated_content = content.content.lower()
-
-        # 간단한 검증: 원본 기사에 있는 키워드가 콘텐츠에 포함되어 있는지
-        # 실제로는 더 정교한 NLP 기반 검증이 필요함
         matched_facts = 0
         total_checks = 0
 
-        # 원본 기사 키워드 중 콘텐츠에 포함된 것 체크
         for fact in original_facts:
-            if len(fact) > 10:  # 너무 짧은 것 제외
+            if len(fact) > 10:
                 total_checks += 1
-                # 원본 기사의 핵심 부분이 콘텐츠에 포함되어 있는지
-                key_parts = fact.split()[:5]  # 처음 5단어
+                key_parts = fact.split()[:5]
                 if any(part in generated_content for part in key_parts if len(part) > 2):
                     matched_facts += 1
 
-        # 신뢰도 점수 계산
-        if total_checks > 0:
-            confidence_score = matched_facts / total_checks
-        else:
-            confidence_score = 0.5  # 기본값
+        keyword_score = matched_facts / total_checks if total_checks > 0 else 0.5
 
-        # 검증 결과 저장
-        content.verified = confidence_score >= 0.3  # 30% 이상이면 검증됨
+        # 4. 최종 신뢰도 = GapAnalyzer(60%) + 키워드매칭(40%)
+        confidence_score = (gap_confidence * 0.6) + (keyword_score * 0.4)
+
+        # 5. 검증 결과 저장 (60% 이상이면 verified)
+        content.verified = confidence_score >= 0.6
         content.confidence_score = round(confidence_score, 2)
 
-        print(f"[CONTENT] Fact-check: verified={content.verified}, confidence={content.confidence_score:.2f}")
+        print(f"[CONTENT] Fact-check: verified={content.verified}, "
+              f"confidence={content.confidence_score:.2f} "
+              f"(gap={gap_confidence:.2f}, keyword={keyword_score:.2f})")
         return content.verified
 
     async def _enrich_with_search(self, issue_name: str, keywords: list[str]) -> list[dict]:

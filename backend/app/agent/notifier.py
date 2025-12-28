@@ -1,7 +1,9 @@
 import logging
 from datetime import date
 from uuid import UUID
+from collections import defaultdict
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.sensors.base import Event
@@ -25,12 +27,14 @@ class Notifier:
                 gmail_user=settings.GMAIL_USER,
                 gmail_app_password=settings.GMAIL_APP_PASSWORD
             )
+        # 이메일 버퍼: user_email -> list of issue data
+        self._email_buffer: dict[str, list[dict]] = defaultdict(list)
 
     async def notify(self, event: Event, db: AsyncSession) -> int:
-        """이벤트에 대한 알림 발송
+        """이벤트에 대한 알림 발송 (이메일은 버퍼에 저장)
 
         Returns:
-            발송된 알림 수
+            발송된 인앱 알림 수
         """
         notifications_sent = 0
 
@@ -43,6 +47,33 @@ class Notifier:
             notifications_sent = await self._notify_category_subscribers(event, db)
 
         return notifications_sent
+
+    def flush_emails(self) -> int:
+        """버퍼에 모인 이메일을 한번에 발송
+
+        Returns:
+            발송된 이메일 수
+        """
+        if not self.email_service:
+            self._email_buffer.clear()
+            return 0
+
+        emails_sent = 0
+        for user_email, issues in self._email_buffer.items():
+            if not issues:
+                continue
+            try:
+                self.email_service.send_followed_issues_update(
+                    recipient=user_email,
+                    issues=issues
+                )
+                emails_sent += 1
+                logger.info(f"[EMAIL] 팔로우 이슈 업데이트 발송: {user_email} ({len(issues)}개 이슈)")
+            except Exception as e:
+                logger.error(f"이메일 발송 실패: {user_email}, {e}")
+
+        self._email_buffer.clear()
+        return emails_sent
 
     async def _notify_followed_update(self, event: Event, db: AsyncSession) -> int:
         """팔로우 이슈 업데이트 알림"""
@@ -60,20 +91,14 @@ class Notifier:
         # 인앱 알림 저장
         await self._save_notification(UUID(user_id), event, db)
 
-        # 이메일 발송
-        if self.email_service and user_email:
-            try:
-                self.email_service.send_followed_issues_update(
-                    recipient=user_email,
-                    issues=[{
-                        "name": event.issue_name,
-                        "category": event.category,
-                        "summary": event.data.get("summary", ""),
-                        "article_count": event.data.get("article_count", 0),
-                    }]
-                )
-            except Exception as e:
-                logger.error(f"이메일 발송 실패: {e}")
+        # 이메일은 버퍼에 저장 (나중에 flush_emails()에서 한번에 발송)
+        if user_email:
+            self._email_buffer[user_email].append({
+                "name": event.issue_name,
+                "category": event.category,
+                "summary": event.data.get("summary", ""),
+                "article_count": event.data.get("article_count", 0),
+            })
 
         return 1
 
@@ -93,20 +118,14 @@ class Notifier:
             await self._save_notification(user.id, event, db)
             notifications_sent += 1
 
-            # 중요한 이벤트만 이메일 발송
-            if event.importance >= 0.7 and self.email_service:
-                try:
-                    self.email_service.send_issues_digest(
-                        recipient=user.email,
-                        issues=[{
-                            "name": event.issue_name,
-                            "category": event.category,
-                            "summary": event.message,
-                            "article_count": event.data.get("today_count", 0),
-                        }]
-                    )
-                except Exception as e:
-                    logger.error(f"이메일 발송 실패: {e}")
+            # 중요한 이벤트만 이메일 버퍼에 추가
+            if event.importance >= 0.7:
+                self._email_buffer[user.email].append({
+                    "name": event.issue_name,
+                    "category": event.category,
+                    "summary": event.message,
+                    "article_count": event.data.get("today_count", 0),
+                })
 
         return notifications_sent
 
@@ -116,16 +135,17 @@ class Notifier:
         db: AsyncSession
     ) -> list[User]:
         """카테고리 구독자 조회"""
+        # UserSettings를 미리 로드하여 lazy load 방지
         query = (
             select(User)
             .join(UserSettings, User.id == UserSettings.user_id)
+            .options(selectinload(User.settings))
             .where(
                 User.is_active == True,
                 UserSettings.email_notifications_enabled == True
             )
         )
 
-        # 카테고리 필터링 (category_filter가 없거나 해당 카테고리 포함)
         result = await db.execute(query)
         users = list(result.scalars().all())
 
@@ -133,8 +153,10 @@ class Notifier:
         if category:
             filtered_users = []
             for user in users:
-                if hasattr(user, 'settings') and user.settings:
-                    category_filter = user.settings.category_filter
+                # settings가 이미 로드되어 있으므로 안전하게 접근 가능
+                settings = getattr(user, 'settings', None)
+                if settings:
+                    category_filter = settings.category_filter
                     if not category_filter or category in category_filter.split(","):
                         filtered_users.append(user)
                 else:
