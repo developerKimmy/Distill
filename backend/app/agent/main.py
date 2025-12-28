@@ -21,6 +21,7 @@ from app.agent.sensors import (
     Event,
 )
 from app.agent.notifier import Notifier
+from app.batch.models import BatchRun  # IssueDailySnapshot relationship 해결용
 from app.notifications.models import AgentRun
 from app.issues.service import IssueService
 

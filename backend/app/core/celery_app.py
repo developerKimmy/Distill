@@ -15,6 +15,12 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Seoul",
     enable_utc=True,
+    # 태스크 타임아웃 설정 (LLM API 호출 포함하므로 넉넉하게)
+    task_time_limit=1800,  # 30분 (hard limit - SIGKILL)
+    task_soft_time_limit=1500,  # 25분 (soft limit - exception)
+    # Worker 설정
+    worker_prefetch_multiplier=1,  # 한 번에 하나씩 처리
+    task_acks_late=True,  # 완료 후 ACK (실패 시 재시도 가능)
 )
 
 celery_app.conf.beat_schedule = {
