@@ -148,6 +148,7 @@ async def get_issue(
                 article_count=snapshot.article_count,
                 sentiment_score=snapshot.sentiment_score,
                 summary=snapshot.summary,
+                created_at=snapshot.created_at,
                 articles=[
                     IssueArticleResponse(
                         id=str(article.id),

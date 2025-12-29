@@ -21,6 +21,7 @@ export interface IssueDailySnapshot {
   articleCount: number;
   sentimentScore: number | null;
   summary: string | null;
+  createdAt: string;
 }
 
 // 기사

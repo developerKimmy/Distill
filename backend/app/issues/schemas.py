@@ -31,6 +31,7 @@ class IssueDailySnapshotResponse(BaseSchema):
     article_count: int
     sentiment_score: float | None
     summary: str | None
+    created_at: datetime
 
 
 # 스냅샷 + 기사 포함

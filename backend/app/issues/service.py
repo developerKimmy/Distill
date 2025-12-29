@@ -355,8 +355,9 @@ class IssueService:
                         if earliest_pub_date is None or pub_date < earliest_pub_date:
                             earliest_pub_date = pub_date
 
-                # first_seen_at 갱신 (더 이른 날짜가 발견된 경우)
-                if earliest_pub_date and earliest_pub_date < issue.first_seen_at:
+                # first_seen_at 갱신 (더 이른 날짜가 발견된 경우, 최소 기준일 이후만)
+                min_start_date = date(2025, 12, 25)
+                if earliest_pub_date and earliest_pub_date >= min_start_date and earliest_pub_date < issue.first_seen_at:
                     print(f"[ISSUE]   Updating first_seen_at: {issue.first_seen_at} -> {earliest_pub_date}")
                     issue.first_seen_at = earliest_pub_date
 

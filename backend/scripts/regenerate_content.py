@@ -183,28 +183,62 @@ async def generate_daily_digest(target_date: date | None = None):
         return digest_content
 
 
+async def get_all_dates_with_snapshots():
+    """DB에 스냅샷이 있는 모든 날짜 조회"""
+    from sqlalchemy import func
+
+    AsyncSession = create_async_session_factory()
+    async with AsyncSession() as db:
+        stmt = select(IssueDailySnapshot.date).distinct().order_by(IssueDailySnapshot.date)
+        result = await db.execute(stmt)
+        return [row[0] for row in result.all()]
+
+
+async def regenerate_all_dates(content_only: bool = False, digest_only: bool = False):
+    """모든 날짜의 콘텐츠 재생성"""
+    dates = await get_all_dates_with_snapshots()
+    print(f"[REGENERATE ALL] Found {len(dates)} dates: {dates}")
+
+    for i, target_date in enumerate(dates, 1):
+        print(f"\n{'='*60}")
+        print(f"[{i}/{len(dates)}] Processing date: {target_date}")
+        print('='*60)
+
+        if not digest_only:
+            await regenerate_contents(target_date)
+        if not content_only:
+            await generate_daily_digest(target_date)
+
+
 async def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="콘텐츠 재생성 스크립트")
     parser.add_argument("--date", type=str, help="대상 날짜 (YYYY-MM-DD)")
+    parser.add_argument("--all", action="store_true", help="모든 날짜 재생성")
     parser.add_argument("--digest-only", action="store_true", help="다이제스트만 생성")
     parser.add_argument("--content-only", action="store_true", help="콘텐츠만 재생성")
 
     args = parser.parse_args()
 
-    target_date = None
-    if args.date:
-        target_date = date.fromisoformat(args.date)
-
-    if args.digest_only:
-        await generate_daily_digest(target_date)
-    elif args.content_only:
-        await regenerate_contents(target_date)
+    if args.all:
+        await regenerate_all_dates(
+            content_only=args.content_only,
+            digest_only=args.digest_only
+        )
     else:
-        # 둘 다 실행
-        await regenerate_contents(target_date)
-        await generate_daily_digest(target_date)
+        target_date = None
+        if args.date:
+            target_date = date.fromisoformat(args.date)
+
+        if args.digest_only:
+            await generate_daily_digest(target_date)
+        elif args.content_only:
+            await regenerate_contents(target_date)
+        else:
+            # 둘 다 실행
+            await regenerate_contents(target_date)
+            await generate_daily_digest(target_date)
 
 
 if __name__ == "__main__":

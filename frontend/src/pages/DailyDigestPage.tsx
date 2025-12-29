@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
@@ -46,7 +46,16 @@ function IssueCard({ issue }: { issue: DigestIssue }) {
   );
 }
 
+const INITIAL_DISPLAY_COUNT = 10;
+
 function CategorySection({ category }: { category: DigestCategory }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasMore = category.issues.length > INITIAL_DISPLAY_COUNT;
+  const displayedIssues = isExpanded
+    ? category.issues
+    : category.issues.slice(0, INITIAL_DISPLAY_COUNT);
+  const remainingCount = category.issues.length - INITIAL_DISPLAY_COUNT;
+
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-3">
@@ -56,10 +65,26 @@ function CategorySection({ category }: { category: DigestCategory }) {
         </span>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        {category.issues.map((issue, idx) => (
+        {displayedIssues.map((issue, idx) => (
           <IssueCard key={`${category.category}-${issue.id}-${idx}`} issue={issue} />
         ))}
       </div>
+      {hasMore && !isExpanded && (
+        <button
+          onClick={() => setIsExpanded(true)}
+          className="mt-3 w-full py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center justify-center gap-1"
+        >
+          <span>+{remainingCount}개 더보기</span>
+        </button>
+      )}
+      {isExpanded && hasMore && (
+        <button
+          onClick={() => setIsExpanded(false)}
+          className="mt-3 w-full py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+        >
+          접기
+        </button>
+      )}
     </div>
   );
 }

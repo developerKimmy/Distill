@@ -2,8 +2,9 @@ import { useState, useMemo, memo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getIssue } from '../api/issues';
-import { LoadingFallback, SentimentBar, FollowButton } from '../components/common';
+import { LoadingFallback, FollowButton } from '../components/common';
 import { useFollowMutation } from '../hooks';
 import { formatShortDate, formatFullDate } from '../utils/dateFormat';
 import type { IssueDetail } from '../types';
@@ -39,7 +40,6 @@ const ArticleCard = memo(function ArticleCard({
 
 export default function IssuePage() {
   const { issueId } = useParams<{ issueId: string }>();
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<string | null>(null);
 
   const queryKey = useMemo(() => ['issue', issueId], [issueId]);
 
@@ -57,16 +57,60 @@ export default function IssuePage() {
     },
   });
 
-  const sortedSnapshots = useMemo(() => {
-    if (!issue?.snapshots) return [];
-    return [...issue.snapshots].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  // 날짜별로 스냅샷 그룹핑
+  const groupedByDate = useMemo(() => {
+    if (!issue?.snapshots) return new Map<string, IssueDetail['snapshots']>();
+
+    const groups = new Map<string, IssueDetail['snapshots']>();
+    for (const snapshot of issue.snapshots) {
+      const dateKey = snapshot.date;
+      if (!groups.has(dateKey)) {
+        groups.set(dateKey, []);
+      }
+      groups.get(dateKey)!.push(snapshot);
+    }
+
+    // 날짜순 정렬된 Map 반환
+    return new Map(
+      [...groups.entries()].sort((a, b) =>
+        new Date(b[0]).getTime() - new Date(a[0]).getTime()
+      )
     );
   }, [issue?.snapshots]);
 
-  const selectedSnapshot = selectedSnapshotId
-    ? sortedSnapshots.find((s) => s.id === selectedSnapshotId) || sortedSnapshots[0]
-    : sortedSnapshots[0];
+  const sortedDates = useMemo(() => [...groupedByDate.keys()], [groupedByDate]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // 선택된 날짜의 스냅샷들 (시간순 정렬)
+  const selectedDateData = useMemo(() => {
+    const date = selectedDate || sortedDates[0];
+    if (!date) return null;
+
+    const snapshots = groupedByDate.get(date) || [];
+    if (snapshots.length === 0) return null;
+
+    // 시간순 정렬 (오래된 순)
+    const sortedSnapshots = [...snapshots].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    // 모든 기사 통합 (중복 제거)
+    const allArticles = sortedSnapshots.flatMap(s => s.articles);
+    const totalArticleCount = sortedSnapshots.reduce((sum, s) => sum + s.articleCount, 0);
+
+    return {
+      date,
+      snapshots: sortedSnapshots,
+      articles: allArticles,
+      articleCount: totalArticleCount,
+    };
+  }, [selectedDate, sortedDates, groupedByDate]);
+
+  // 시간 포맷 (HH:mm)
+  const formatTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
 
   const isLoggedIn = !!localStorage.getItem('access_token');
 
@@ -108,73 +152,111 @@ export default function IssuePage() {
           </div>
 
           {/* 날짜 선택 */}
-          {sortedSnapshots.length > 1 && (
+          {sortedDates.length > 1 && (
             <div className="flex items-center gap-2 overflow-x-auto pb-2">
-              {sortedSnapshots.map((snapshot) => (
+              {sortedDates.map((date) => (
                 <button
-                  key={snapshot.id}
-                  onClick={() => setSelectedSnapshotId(snapshot.id)}
+                  key={date}
+                  onClick={() => setSelectedDate(date)}
                   className={`px-3 py-1.5 rounded-full text-xs sm:text-sm whitespace-nowrap transition-colors ${
-                    selectedSnapshot?.id === snapshot.id
+                    (selectedDate || sortedDates[0]) === date
                       ? 'bg-amber-500 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  {formatShortDate(snapshot.date)}
+                  {formatShortDate(date)}
                 </button>
               ))}
             </div>
           )}
 
           {/* 선택된 날짜 정보 */}
-          {selectedSnapshot && (
+          {selectedDateData && (
             <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 mb-3 sm:mb-4">
                 <h2 className="text-base sm:text-lg font-semibold">
-                  {formatFullDate(selectedSnapshot.date)}
+                  {formatFullDate(selectedDateData.date)}
                 </h2>
                 <span className="text-xs sm:text-sm text-amber-600 font-medium">
-                  기사 {selectedSnapshot.articleCount}개
+                  기사 {selectedDateData.articleCount}개
                 </span>
               </div>
 
-              {selectedSnapshot.summary && (
-                <p className="text-sm sm:text-base text-gray-700 mb-3 sm:mb-4">
-                  {selectedSnapshot.summary}
-                </p>
-              )}
-
-              {selectedSnapshot.sentimentScore !== null && (
-                <SentimentBar score={selectedSnapshot.sentimentScore} />
-              )}
-
-              {/* 생성된 콘텐츠 */}
-              {selectedSnapshot.contents?.length > 0 && (
-                <div className="space-y-4 mb-6">
-                  <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    📝 생성된 콘텐츠
-                    {selectedSnapshot.contents[0].verified && (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                        검증됨
+              {/* 타임라인 */}
+              <div className="mb-6">
+                {/* 타임라인 헤더 */}
+                <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
+                  {selectedDateData.snapshots.map((snapshot, idx) => (
+                    <div key={snapshot.id} className="flex items-center">
+                      {/* 점 */}
+                      <div className="w-2 h-2 rounded-full bg-gray-400 shrink-0" />
+                      {/* 시간 */}
+                      <span className="text-xs font-medium text-gray-600 ml-1 mr-1 whitespace-nowrap">
+                        {formatTime(snapshot.createdAt)}
                       </span>
-                    )}
-                  </h3>
-                  {selectedSnapshot.contents.map((content) => (
-                    <div
-                      key={content.id}
-                      className="p-4 bg-amber-50 border border-amber-200 rounded-lg"
-                    >
-                      <h4 className="font-semibold text-gray-900 mb-2">{content.title}</h4>
-                      <div className="prose prose-sm prose-gray max-w-none">
-                        <ReactMarkdown>{content.content}</ReactMarkdown>
-                      </div>
-                      <div className="mt-3 text-xs text-gray-500">
-                        신뢰도: {Math.round(content.confidenceScore * 100)}%
-                      </div>
+                      {/* 연결선 (마지막 제외) */}
+                      {idx < selectedDateData.snapshots.length - 1 && (
+                        <div className="w-8 h-px bg-gray-300" />
+                      )}
                     </div>
                   ))}
                 </div>
-              )}
+
+                {/* 스냅샷 내용 */}
+                <div className="space-y-6">
+                  {selectedDateData.snapshots.map((snapshot, idx) => (
+                    <div key={snapshot.id}>
+                      {/* 시간 라벨 */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-medium text-white bg-gray-500 px-2 py-0.5 rounded">
+                          {formatTime(snapshot.createdAt)}
+                        </span>
+                        {idx === selectedDateData.snapshots.length - 1 && (
+                          <span className="text-[10px] text-amber-600 font-medium">최신</span>
+                        )}
+                      </div>
+                      {/* 요약 */}
+                      {snapshot.summary && (
+                        <p className="text-sm sm:text-base text-gray-700 mb-3">
+                          {snapshot.summary}
+                        </p>
+                      )}
+                      {/* 콘텐츠 (최신 스냅샷에만 표시) */}
+                      {idx === selectedDateData.snapshots.length - 1 && snapshot.contents?.length > 0 && (
+                        <div className="space-y-3">
+                          {snapshot.contents.map((content) => (
+                            <div
+                              key={content.id}
+                              className="p-3 sm:p-4 bg-amber-50 border border-amber-200 rounded-lg"
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <h4 className="font-semibold text-gray-900 text-sm sm:text-base">
+                                  {content.title}
+                                </h4>
+                                {content.verified && (
+                                  <span className="text-[10px] sm:text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                                    검증됨
+                                  </span>
+                                )}
+                              </div>
+                              <div className="prose prose-sm prose-gray max-w-none overflow-x-auto prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-100 prose-th:p-2 prose-td:border prose-td:border-gray-300 prose-td:p-2">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>
+                              </div>
+                              <div className="mt-2 text-[10px] sm:text-xs text-gray-500">
+                                신뢰도: {Math.round(content.confidenceScore * 100)}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* 구분선 */}
+                      {idx < selectedDateData.snapshots.length - 1 && (
+                        <hr className="mt-6 border-gray-200" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* 비로그인 CTA */}
               {!isLoggedIn && (
@@ -202,7 +284,7 @@ export default function IssuePage() {
               {/* 기사 목록 */}
               <div className="space-y-2 sm:space-y-3">
                 <h3 className="text-xs sm:text-sm font-medium text-gray-700">📰 관련 기사</h3>
-                {selectedSnapshot.articles.map((article) => (
+                {selectedDateData.articles.map((article) => (
                   <ArticleCard key={article.id} article={article} />
                 ))}
               </div>

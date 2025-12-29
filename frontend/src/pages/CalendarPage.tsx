@@ -84,15 +84,18 @@ function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefin
   const result: WeekIssue[] = [];
   const rows: boolean[][] = [];
 
+  // 이슈 시작일 최소 기준: 12월 25일
+  const minStartDate = new Date(2025, 11, 25); // 2025-12-25
+
   const weekIssues = issues.filter((issue) => {
-    const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
+    const issueStart = max([startOfDay(parseLocalDate(issue.firstSeenAt)), minStartDate]);
     const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
     return !isAfter(issueStart, weekEnd) && !isBefore(issueEnd, weekStart);
   });
 
   weekIssues.sort((a, b) => {
-    const aStart = parseLocalDate(a.firstSeenAt);
-    const bStart = parseLocalDate(b.firstSeenAt);
+    const aStart = max([parseLocalDate(a.firstSeenAt), minStartDate]);
+    const bStart = max([parseLocalDate(b.firstSeenAt), minStartDate]);
     const aDuration = parseLocalDate(a.lastSeenAt).getTime() - aStart.getTime();
     const bDuration = parseLocalDate(b.lastSeenAt).getTime() - bStart.getTime();
     return aStart.getTime() !== bStart.getTime()
@@ -101,7 +104,7 @@ function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefin
   });
 
   weekIssues.forEach((issue) => {
-    const issueStart = startOfDay(parseLocalDate(issue.firstSeenAt));
+    const issueStart = max([startOfDay(parseLocalDate(issue.firstSeenAt)), minStartDate]);
     const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
     const visibleStart = max([issueStart, weekStart]);
     const visibleEnd = min([issueEnd, weekEnd]);
@@ -270,13 +273,15 @@ export default function CalendarPage() {
                               e.stopPropagation();
                               navigate(`/digest/${format(date, 'yyyy-MM-dd')}`);
                             }}
-                            className="text-[8px] sm:text-[10px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors"
+                            className="w-4 h-4 sm:w-auto sm:h-auto sm:px-1 sm:py-0.5 flex items-center justify-center bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors"
+                            title="브리핑 보기"
                           >
-                            브리핑
+                            <span className="hidden sm:inline text-[10px]">브리핑</span>
+                            <svg className="w-2.5 h-2.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
                           </button>
-                        ) : (
-                          <div />
-                        )}
+                        ) : null}
                         <span
                           className={`
                             inline-flex items-center justify-center w-5 h-5 sm:w-7 sm:h-7 text-xs sm:text-sm
