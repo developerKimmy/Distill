@@ -24,11 +24,11 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    # Agent 사이클 실행 (매 정시, 1시간마다)
+    # Agent 사이클 실행 (5시간마다: 0, 5, 10, 15, 20시)
     # 뉴스 수집 → 클러스터링 → 이벤트 감지 → 즉시 알림
     "run-agent-cycle": {
         "task": "app.tasks.agent.run_agent_cycle",
-        "schedule": crontab(minute=0),  # 매 정시
+        "schedule": crontab(hour="0,5,10,15,20", minute=0),  # 5시간마다
     },
     # 글로벌 배치 실행 (하루 3회: 06:00, 12:00, 18:00)
     # 콘텐츠 생성 (요약, 타임라인 등) 담당

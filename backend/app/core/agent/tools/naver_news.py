@@ -15,6 +15,7 @@ class NewsItem:
     press: str
     description: str | None = None
     published_at: datetime | None = None
+    title_embedding: list[float] | None = None  # 유사도 체크용 임베딩
 
 
 class NaverNewsProvider:

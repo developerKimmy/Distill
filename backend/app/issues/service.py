@@ -324,13 +324,25 @@ class IssueService:
                 print(f"[ISSUE]   Step 5.1: Searching news articles for '{item.name}'...")
                 articles = self.news_provider.search_news(item.name, display=10)
 
+                # 이슈 생성일 기준 7일 이내의 기사만 허용 (다른 사건 필터링)
+                issue_created_date = issue.created_at.date() if hasattr(issue.created_at, 'date') else issue.created_at
+                min_valid_date = issue_created_date - timedelta(days=7)
+
                 article_dicts = []
                 saved_count = 0
+                skipped_old = 0
                 earliest_pub_date = None  # 가장 이른 pub_date 추적
                 for article in articles:
                     # 중복 체크
                     if self.deduplicator.is_duplicate(article.url, article.title, article.description or ""):
                         continue
+
+                    # 너무 오래된 기사는 다른 사건일 가능성이 높으므로 제외
+                    if article.published_at:
+                        pub_date = article.published_at.date() if hasattr(article.published_at, 'date') else article.published_at
+                        if pub_date < min_valid_date:
+                            skipped_old += 1
+                            continue
 
                     self.deduplicator.add(article.url, article.title, article.description or "")
                     issue_article = IssueArticle(
@@ -339,7 +351,8 @@ class IssueService:
                         description=article.description,
                         url=article.url,
                         press=article.press,
-                        published_at=article.published_at
+                        published_at=article.published_at,
+                        title_embedding=getattr(article, 'title_embedding', None)
                     )
                     self.db.add(issue_article)
                     article_dicts.append({
@@ -355,11 +368,19 @@ class IssueService:
                         if earliest_pub_date is None or pub_date < earliest_pub_date:
                             earliest_pub_date = pub_date
 
-                # first_seen_at 갱신 (더 이른 날짜가 발견된 경우, 최소 기준일 이후만)
-                min_start_date = date(2025, 12, 25)
-                if earliest_pub_date and earliest_pub_date >= min_start_date and earliest_pub_date < issue.first_seen_at:
+                if skipped_old > 0:
+                    print(f"[ISSUE]   Skipped {skipped_old} old articles (before {min_valid_date})")
+
+                # first_seen_at 갱신 (이슈 생성일 기준 7일 이내의 기사만 허용)
+                # - 이슈 created_at보다 7일 이상 이전의 기사는 다른 사건일 가능성이 높음
+                issue_created_date = issue.created_at.date() if hasattr(issue.created_at, 'date') else issue.created_at
+                min_valid_date = issue_created_date - timedelta(days=7)
+
+                if earliest_pub_date and earliest_pub_date >= min_valid_date and earliest_pub_date < issue.first_seen_at:
                     print(f"[ISSUE]   Updating first_seen_at: {issue.first_seen_at} -> {earliest_pub_date}")
                     issue.first_seen_at = earliest_pub_date
+                elif earliest_pub_date and earliest_pub_date < min_valid_date:
+                    print(f"[ISSUE]   Skipping old article date {earliest_pub_date} (issue created: {issue_created_date}, min valid: {min_valid_date})")
 
                 print(f"[ISSUE]   Step 5.1 completed: {saved_count}/{len(articles)} articles (중복 제거) in {time.time() - step_start:.2f}s")
 
@@ -413,7 +434,8 @@ class IssueService:
                     followup_count = await self._follow_up_search(
                         snapshot.id,
                         item.related_search_terms,
-                        existing_urls={a["url"] for a in article_dicts}
+                        existing_urls={a["url"] for a in article_dicts},
+                        issue_created_at=issue_created_date
                     )
                     print(f"[ISSUE]   Step 5.6 completed: {followup_count} additional articles in {time.time() - step_start:.2f}s")
 
@@ -482,7 +504,8 @@ class IssueService:
         self,
         snapshot_id: UUID,
         search_terms: list[str],
-        existing_urls: set[str]
+        existing_urls: set[str],
+        issue_created_at: date | None = None
     ) -> int:
         """후속 검색 - 진행형 이슈에 대해 추가 기사 수집
 
@@ -490,11 +513,15 @@ class IssueService:
             snapshot_id: 스냅샷 ID
             search_terms: 검색할 엔티티 (인물명, 기관명 등)
             existing_urls: 이미 수집된 기사 URL들
+            issue_created_at: 이슈 생성일 (오래된 기사 필터링용)
 
         Returns:
             추가된 기사 수
         """
         added_count = 0
+
+        # 이슈 생성일 기준 7일 이내의 기사만 허용
+        min_valid_date = (issue_created_at - timedelta(days=7)) if issue_created_at else None
 
         for term in search_terms[:2]:  # 최대 2개 검색어만
             try:
@@ -509,6 +536,12 @@ class IssueService:
                     if self.deduplicator.is_duplicate(article.url, article.title, article.description or ""):
                         continue
 
+                    # 너무 오래된 기사는 다른 사건일 가능성이 높으므로 제외
+                    if min_valid_date and article.published_at:
+                        pub_date = article.published_at.date() if hasattr(article.published_at, 'date') else article.published_at
+                        if pub_date < min_valid_date:
+                            continue
+
                     self.deduplicator.add(article.url, article.title, article.description or "")
                     issue_article = IssueArticle(
                         snapshot_id=snapshot_id,
@@ -516,7 +549,8 @@ class IssueService:
                         description=article.description,
                         url=article.url,
                         press=article.press,
-                        published_at=article.published_at
+                        published_at=article.published_at,
+                        title_embedding=getattr(article, 'title_embedding', None)
                     )
                     self.db.add(issue_article)
                     existing_urls.add(article.url)

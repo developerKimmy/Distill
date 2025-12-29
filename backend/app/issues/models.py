@@ -88,6 +88,9 @@ class IssueArticle(Base, UUIDMixin):
         nullable=False
     )
 
+    # 제목 임베딩 (유사 기사 중복 체크용)
+    title_embedding = mapped_column(Vector(384), nullable=True)
+
     # Relationships
     snapshot = relationship("IssueDailySnapshot", back_populates="articles")
 
