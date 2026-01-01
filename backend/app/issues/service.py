@@ -10,7 +10,10 @@ from sqlalchemy.orm import selectinload
 KST = timezone(timedelta(hours=9))
 
 # 임베딩 유사도 임계값 (높을수록 엄격하게 매칭, 새 이슈 생성 증가)
-SIMILARITY_THRESHOLD = 0.92
+SIMILARITY_THRESHOLD = 0.80
+
+# 기사 타이틀 유사도 임계값 (이 값 이상이면 중복으로 판단)
+ARTICLE_SIMILARITY_THRESHOLD = 0.85
 
 from app.issues.models import (
     Issue, IssueDailySnapshot, IssueArticle, IssueKeyword, IssueEmbedding, IssueFollow
@@ -19,7 +22,7 @@ from app.insights.models import IssueInsight
 from app.core.agent.tools import (
     NaverNewsProvider, ClusteringProvider, KeywordProvider,
     YouTubeProvider, NeedsProvider, YouTubeAPIError, EmbeddingProvider,
-    GapAnalyzer, TavilyProvider
+    GapAnalyzer, TavilyProvider, NewsItem
 )
 from app.content.service import ContentService
 from app.common.utils import ArticleDeduplicator, PipelineResult
@@ -30,6 +33,46 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     a_np = np.array(a)
     b_np = np.array(b)
     return float(np.dot(a_np, b_np) / (np.linalg.norm(a_np) * np.linalg.norm(b_np)))
+
+
+async def is_duplicate_article(
+    db: AsyncSession,
+    title: str,
+    embedding_provider,
+    threshold: float = ARTICLE_SIMILARITY_THRESHOLD
+) -> bool:
+    """기사 타이틀 임베딩 유사도로 중복 체크 (최근 7일)
+
+    Returns:
+        True if duplicate found, False otherwise
+    """
+    try:
+        # 타이틀 임베딩 생성
+        title_embedding = embedding_provider.embed(title)
+        week_ago = datetime.now(KST) - timedelta(days=7)
+
+        # 최근 7일 기사 중 유사한 것 찾기
+        query = text("""
+            SELECT 1 - (title_embedding <=> :embedding) as similarity
+            FROM issue_articles
+            WHERE title_embedding IS NOT NULL
+            AND created_at > :week_ago
+            ORDER BY title_embedding <=> :embedding
+            LIMIT 1
+        """)
+
+        result = await db.execute(
+            query,
+            {"embedding": str(title_embedding), "week_ago": week_ago}
+        )
+        row = result.fetchone()
+
+        if row and row[0] >= threshold:
+            return True
+        return False
+    except Exception as e:
+        print(f"[ISSUE]     Duplicate check error: {e}")
+        return False
 
 
 class IssueService:
@@ -169,11 +212,20 @@ class IssueService:
         print(f"[MATCH] 결과: {sum(len(v) for v in matched.values())}개 매칭, {len(unmatched)}개 새 기사")
         return matched, unmatched
 
-    async def collect_issues(self, batch_run_id: UUID | None = None) -> list[Issue]:
+    async def collect_issues(
+        self,
+        batch_run_id: UUID | None = None,
+        pre_collected_articles: list[NewsItem] | None = None
+    ) -> list[Issue]:
         """이슈 수집 파이프라인 (임베딩 우선 매칭)
 
+        Args:
+            batch_run_id: 배치 실행 ID
+            pre_collected_articles: NewsCollector에서 미리 수집/필터링된 기사
+                                   (제공되면 Step 1 스킵, 중복 체크도 스킵)
+
         Steps:
-        1. 랭킹 뉴스 스크래핑
+        1. 랭킹 뉴스 스크래핑 (pre_collected_articles 있으면 스킵)
         2. 임베딩으로 기존 이슈 매칭 (빠름)
         3. 매칭된 기사 → 기존 이슈 업데이트
         4. 매칭 안 된 기사만 → LLM 클러스터링 (느림, 비쌈)
@@ -184,22 +236,41 @@ class IssueService:
         pipeline_result = PipelineResult()
         self.deduplicator.reset()
 
+        # pre_collected_articles가 있으면 이미 중복 필터링됨
+        is_pre_filtered = pre_collected_articles is not None
+
         print(f"[ISSUE] ========== collect_issues started (embedding-first) ==========")
 
-        # 1. 랭킹 뉴스 스크래핑
+        # 1. 랭킹 뉴스 스크래핑 (pre_collected_articles 있으면 스킵)
         step_start = time.time()
-        print(f"[ISSUE] Step 1: Scraping ranking news...")
-        try:
-            news_list = self.news_provider.get_ranking_news()
-            # 제목 + 설명 포함
+        if pre_collected_articles:
+            print(f"[ISSUE] Step 1: Using {len(pre_collected_articles)} pre-collected articles (skip scraping)")
+            # NewsItem -> dict 변환
             articles_raw = [
-                {"title": news.title, "description": getattr(news, 'description', '') or ''}
-                for news in news_list
+                {
+                    "title": article.title,
+                    "description": article.description or '',
+                    "url": article.url,
+                    "press": article.press,
+                    "published_at": article.published_at,
+                    "title_embedding": article.title_embedding,  # 이미 생성된 임베딩
+                }
+                for article in pre_collected_articles
             ]
-            print(f"[ISSUE] Step 1 completed: {len(articles_raw)} articles in {time.time() - step_start:.2f}s")
-        except Exception as e:
-            print(f"[ISSUE] Step 1 FAILED: {e}")
-            raise
+            print(f"[ISSUE] Step 1 completed: {len(articles_raw)} articles (pre-filtered)")
+        else:
+            print(f"[ISSUE] Step 1: Scraping ranking news...")
+            try:
+                news_list = self.news_provider.get_ranking_news()
+                # 제목 + 설명 포함
+                articles_raw = [
+                    {"title": news.title, "description": getattr(news, 'description', '') or ''}
+                    for news in news_list
+                ]
+                print(f"[ISSUE] Step 1 completed: {len(articles_raw)} articles in {time.time() - step_start:.2f}s")
+            except Exception as e:
+                print(f"[ISSUE] Step 1 FAILED: {e}")
+                raise
 
         # 2. 임베딩으로 기존 이슈 매칭
         step_start = time.time()
@@ -214,10 +285,54 @@ class IssueService:
         if matched_by_issue:
             step_start = time.time()
             print(f"[ISSUE] Step 3: Updating {len(matched_by_issue)} existing issues...")
+            week_ago = datetime.now(KST) - timedelta(days=7)
+
             for issue_id, matched_articles in matched_by_issue.items():
                 try:
                     issue = await self.db.get(Issue, issue_id)
                     if not issue:
+                        continue
+
+                    articles_to_save = []
+
+                    if is_pre_filtered:
+                        # 이미 NewsCollector에서 중복 필터링됨 - 임베딩도 이미 있음
+                        for article in matched_articles:
+                            title_embedding = article.get("title_embedding")
+                            if not title_embedding:
+                                # 임베딩 없으면 생성
+                                title_embedding = self.embedding_provider.embed(article["title"])
+                            articles_to_save.append((article, title_embedding))
+                    else:
+                        # 직접 수집한 경우 - 중복 체크 필요
+                        titles = [a["title"] for a in matched_articles]
+                        title_embeddings = self.embedding_provider.embed_batch(titles)
+
+                        for i, article in enumerate(matched_articles):
+                            title_embedding = title_embeddings[i]
+
+                            # DB에서 유사한 기사 있는지 확인
+                            query = text("""
+                                SELECT 1 - (title_embedding <=> :embedding) as similarity
+                                FROM issue_articles
+                                WHERE title_embedding IS NOT NULL
+                                AND created_at > :week_ago
+                                ORDER BY title_embedding <=> :embedding
+                                LIMIT 1
+                            """)
+                            result = await self.db.execute(
+                                query,
+                                {"embedding": str(title_embedding), "week_ago": week_ago}
+                            )
+                            row = result.fetchone()
+
+                            if row and row[0] >= ARTICLE_SIMILARITY_THRESHOLD:
+                                continue  # 중복 스킵
+
+                            articles_to_save.append((article, title_embedding))
+
+                    if not articles_to_save:
+                        print(f"[ISSUE]   Skipped '{issue.name}' - all articles are duplicates")
                         continue
 
                     issue.last_seen_at = today
@@ -228,26 +343,28 @@ class IssueService:
                         issue_id=issue.id,
                         batch_run_id=batch_run_id,
                         date=today,
-                        article_count=len(matched_articles),
-                        summary=f"임베딩 매칭으로 {len(matched_articles)}개 기사 수집"
+                        article_count=len(articles_to_save),
+                        summary=f"임베딩 매칭으로 {len(articles_to_save)}개 기사 수집"
                     )
                     self.db.add(snapshot)
                     await self.db.flush()
 
-                    # 기사 저장
-                    for article in matched_articles:
+                    # 기사 저장 (임베딩 포함)
+                    for article, title_embedding in articles_to_save:
                         issue_article = IssueArticle(
                             snapshot_id=snapshot.id,
                             title=article["title"],
                             description=article.get("description"),
                             url=article.get("url", ""),
-                            press=article.get("press")
+                            press=article.get("press"),
+                            published_at=article.get("published_at"),
+                            title_embedding=title_embedding
                         )
                         self.db.add(issue_article)
 
                     issues.append(issue)
                     snapshot_ids.append(snapshot.id)
-                    print(f"[ISSUE]   Updated '{issue.name}' with {len(matched_articles)} articles")
+                    print(f"[ISSUE]   Updated '{issue.name}' with {len(articles_to_save)}/{len(matched_articles)} articles")
 
                 except Exception as e:
                     print(f"[ISSUE]   Failed to update issue {issue_id}: {e}")
@@ -328,12 +445,11 @@ class IssueService:
                 issue_created_date = issue.created_at.date() if hasattr(issue.created_at, 'date') else issue.created_at
                 min_valid_date = issue_created_date - timedelta(days=7)
 
-                article_dicts = []
-                saved_count = 0
+                # 먼저 URL/텍스트 중복과 날짜 필터링
+                filtered_articles = []
                 skipped_old = 0
-                earliest_pub_date = None  # 가장 이른 pub_date 추적
                 for article in articles:
-                    # 중복 체크
+                    # URL/텍스트 중복 체크
                     if self.deduplicator.is_duplicate(article.url, article.title, article.description or ""):
                         continue
 
@@ -344,29 +460,73 @@ class IssueService:
                             skipped_old += 1
                             continue
 
-                    self.deduplicator.add(article.url, article.title, article.description or "")
-                    issue_article = IssueArticle(
-                        snapshot_id=snapshot.id,
-                        title=article.title,
-                        description=article.description,
-                        url=article.url,
-                        press=article.press,
-                        published_at=article.published_at,
-                        title_embedding=getattr(article, 'title_embedding', None)
-                    )
-                    self.db.add(issue_article)
-                    article_dicts.append({
-                        "title": article.title,
-                        "description": article.description,
-                        "url": article.url
-                    })
-                    saved_count += 1
+                    filtered_articles.append(article)
 
-                    # 가장 이른 pub_date 추적
-                    if article.published_at:
-                        pub_date = article.published_at.date() if hasattr(article.published_at, 'date') else article.published_at
-                        if earliest_pub_date is None or pub_date < earliest_pub_date:
-                            earliest_pub_date = pub_date
+                # 배치로 타이틀 임베딩 생성
+                if filtered_articles:
+                    titles = [a.title for a in filtered_articles]
+                    title_embeddings = self.embedding_provider.embed_batch(titles)
+
+                    # 임베딩 유사도로 중복 체크
+                    article_dicts = []
+                    saved_count = 0
+                    skipped_similar = 0
+                    earliest_pub_date = None
+
+                    week_ago = datetime.now(KST) - timedelta(days=7)
+
+                    for i, article in enumerate(filtered_articles):
+                        title_embedding = title_embeddings[i]
+
+                        # DB에서 유사한 기사 있는지 확인
+                        query = text("""
+                            SELECT 1 - (title_embedding <=> :embedding) as similarity
+                            FROM issue_articles
+                            WHERE title_embedding IS NOT NULL
+                            AND created_at > :week_ago
+                            ORDER BY title_embedding <=> :embedding
+                            LIMIT 1
+                        """)
+                        result = await self.db.execute(
+                            query,
+                            {"embedding": str(title_embedding), "week_ago": week_ago}
+                        )
+                        row = result.fetchone()
+
+                        if row and row[0] >= ARTICLE_SIMILARITY_THRESHOLD:
+                            skipped_similar += 1
+                            continue
+
+                        self.deduplicator.add(article.url, article.title, article.description or "")
+                        issue_article = IssueArticle(
+                            snapshot_id=snapshot.id,
+                            title=article.title,
+                            description=article.description,
+                            url=article.url,
+                            press=article.press,
+                            published_at=article.published_at,
+                            title_embedding=title_embedding
+                        )
+                        self.db.add(issue_article)
+                        article_dicts.append({
+                            "title": article.title,
+                            "description": article.description,
+                            "url": article.url
+                        })
+                        saved_count += 1
+
+                        # 가장 이른 pub_date 추적
+                        if article.published_at:
+                            pub_date = article.published_at.date() if hasattr(article.published_at, 'date') else article.published_at
+                            if earliest_pub_date is None or pub_date < earliest_pub_date:
+                                earliest_pub_date = pub_date
+
+                    if skipped_similar > 0:
+                        print(f"[ISSUE]   Skipped {skipped_similar} similar articles (embedding)")
+                else:
+                    article_dicts = []
+                    saved_count = 0
+                    earliest_pub_date = None
 
                 if skipped_old > 0:
                     print(f"[ISSUE]   Skipped {skipped_old} old articles (before {min_valid_date})")
@@ -642,30 +802,34 @@ class IssueService:
                 try:
                     results = await self.tavily_provider.search(query, max_results=3)
                     for result in results:
-                        if result.url in existing_urls:
+                        # SearchResult는 TypedDict이므로 dict 접근 사용
+                        url = result["url"]
+                        title = result["title"]
+                        snippet = result["snippet"] or ""
+
+                        if url in existing_urls:
                             continue
-                        snippet = result.snippet or ""
-                        if self.deduplicator.is_duplicate(result.url, result.title, snippet):
+                        if self.deduplicator.is_duplicate(url, title, snippet):
                             continue
 
-                        self.deduplicator.add(result.url, result.title, snippet)
-                        existing_urls.add(result.url)
+                        self.deduplicator.add(url, title, snippet)
+                        existing_urls.add(url)
 
                         # 크로스체크 기사로 저장
                         crosscheck_article = IssueArticle(
                             snapshot_id=snapshot_id,
-                            title=result.title,
+                            title=title,
                             description=snippet[:500] if snippet else None,
-                            url=result.url,
+                            url=url,
                             press="crosscheck",  # 크로스체크 출처 표시
                             published_at=None
                         )
                         self.db.add(crosscheck_article)
 
                         crosscheck_articles.append({
-                            "title": result.title,
+                            "title": title,
                             "description": snippet[:500] if snippet else "",
-                            "url": result.url,
+                            "url": url,
                             "is_crosscheck": True
                         })
 

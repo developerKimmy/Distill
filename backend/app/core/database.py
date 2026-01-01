@@ -74,6 +74,8 @@ def create_async_session_factory():
     engine = create_async_engine(
         ASYNC_DATABASE_URL,
         connect_args=_get_ssl_connect_args(),
+        pool_pre_ping=True,  # 커넥션 사용 전 유효성 체크
+        pool_recycle=300,    # 5분마다 커넥션 재생성
     )
     return async_sessionmaker(
         engine,
@@ -86,6 +88,8 @@ def create_async_session_factory():
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     connect_args=_get_ssl_connect_args(),
+    pool_pre_ping=True,  # 커넥션 사용 전 유효성 체크
+    pool_recycle=300,    # 5분마다 커넥션 재생성
 )
 AsyncSessionLocal = async_sessionmaker(
     async_engine,

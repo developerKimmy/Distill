@@ -30,53 +30,51 @@ async def regenerate_contents(target_date: date | None = None):
     """
     AsyncSession = create_async_session_factory()
 
+    # 대상 스냅샷 ID 조회 (세션 분리)
+    if target_date is None:
+        target_date = date.today()
+
+    print(f"[REGENERATE] Target date: {target_date}")
+
     async with AsyncSession() as db:
-        # 대상 스냅샷 조회
-        if target_date is None:
-            target_date = date.today()
-
-        print(f"[REGENERATE] Target date: {target_date}")
-
         stmt = (
-            select(IssueDailySnapshot)
-            .options(selectinload(IssueDailySnapshot.issue))
+            select(IssueDailySnapshot.id, Issue.name)
+            .join(Issue, IssueDailySnapshot.issue_id == Issue.id)
             .where(IssueDailySnapshot.date == target_date)
         )
         result = await db.execute(stmt)
-        snapshots = list(result.scalars().all())
+        snapshot_data = [(row[0], row[1]) for row in result.all()]
 
-        print(f"[REGENERATE] Found {len(snapshots)} snapshots")
+        print(f"[REGENERATE] Found {len(snapshot_data)} snapshots")
 
-        if not snapshots:
+        if not snapshot_data:
             print("[REGENERATE] No snapshots found")
             return
 
         # 기존 콘텐츠 삭제
-        snapshot_ids = [s.id for s in snapshots]
+        snapshot_ids = [s[0] for s in snapshot_data]
         delete_stmt = delete(IssueContent).where(IssueContent.snapshot_id.in_(snapshot_ids))
         await db.execute(delete_stmt)
         await db.commit()
         print(f"[REGENERATE] Deleted existing contents")
 
-        # 재생성
-        content_service = ContentService(db)
+    # 각 스냅샷마다 새 세션으로 재생성
+    for i, (snapshot_id, issue_name) in enumerate(snapshot_data, 1):
+        print(f"[REGENERATE] ({i}/{len(snapshot_data)}) Regenerating: {issue_name}")
 
-        for i, snapshot in enumerate(snapshots, 1):
-            issue_name = snapshot.issue.name if snapshot.issue else "Unknown"
-            print(f"[REGENERATE] ({i}/{len(snapshots)}) Regenerating: {issue_name}")
-
-            try:
-                content = await content_service.generate_content(snapshot.id)
+        try:
+            async with AsyncSession() as db:
+                content_service = ContentService(db)
+                content = await content_service.generate_content(snapshot_id)
                 if content:
-                    await content_service.verify_content(content.id)
+                    await db.commit()
                     print(f"  ✓ Generated: {content.title[:50]}...")
                 else:
                     print(f"  ✗ Failed to generate")
-            except Exception as e:
-                print(f"  ✗ Error: {e}")
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
 
-        await db.commit()
-        print(f"[REGENERATE] Done!")
+    print(f"[REGENERATE] Done!")
 
 
 async def generate_daily_digest(target_date: date | None = None):

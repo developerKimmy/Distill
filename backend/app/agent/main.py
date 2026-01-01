@@ -59,22 +59,24 @@ class MonitoringAgent:
         await db.flush()
 
         try:
-            # 1. Collect - 뉴스 수집
+            # 1. Collect - 뉴스 수집 (중복 필터링 포함)
             logger.info("=== Agent Cycle Started ===")
             logger.info("Step 1: Collecting news...")
 
             articles = await self.collector.collect(db)
             agent_run.articles_collected = len(articles)
-            logger.info(f"Collected {len(articles)} new articles")
+            logger.info(f"Collected {len(articles)} new articles (pre-filtered)")
 
             # 2. Analyze - 기존 IssueService 활용하여 클러스터링 + 이슈 매칭
             if articles:
                 logger.info("Step 2: Analyzing issues...")
                 issue_service = IssueService(db)
 
-                # 기존 collect_issues 대신 간소화된 처리
-                # (콘텐츠 생성은 배치에서 하므로 여기서는 스킵)
-                issues = await issue_service.collect_issues()
+                # NewsCollector에서 수집/필터링된 기사를 전달
+                # (중복 체크 이미 완료, 임베딩도 생성됨)
+                issues = await issue_service.collect_issues(
+                    pre_collected_articles=articles
+                )
                 agent_run.issues_processed = len(issues)
                 logger.info(f"Processed {len(issues)} issues")
 

@@ -98,7 +98,7 @@ def send_morning_digest(self):
 
     어제 있었던 이슈를 요약해서 구독자에게 발송
     """
-    from datetime import date, timedelta
+    from datetime import date, datetime, timedelta, timezone
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
     from app.auth.models import User
@@ -109,8 +109,12 @@ def send_morning_digest(self):
 
     print("[DIGEST] Morning digest started")
 
-    # 어제 날짜
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    # 어제 날짜 (KST 기준)
+    KST = timezone(timedelta(hours=9))
+    now_kst = datetime.now(KST)
+    today_kst = now_kst.date()
+    yesterday = (today_kst - timedelta(days=1)).isoformat()
+    print(f"[DIGEST] KST now: {now_kst.isoformat()}, yesterday (target): {yesterday}")
 
     try:
         with SessionLocal() as db:
@@ -136,7 +140,7 @@ def send_morning_digest(self):
             from app.issues.models import Issue, IssueDailySnapshot
             from collections import defaultdict
 
-            yesterday_date = date.today() - timedelta(days=1)
+            yesterday_date = today_kst - timedelta(days=1)
 
             stmt = (
                 select(IssueDailySnapshot)

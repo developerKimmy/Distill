@@ -252,6 +252,7 @@ async def get_daily_report(
                 article_count=snapshot.article_count,
                 sentiment_score=snapshot.sentiment_score,
                 summary=snapshot.summary,
+                created_at=snapshot.created_at,
                 issue=IssueResponse(
                     id=str(snapshot.issue.id),
                     name=snapshot.issue.name,
