@@ -30,23 +30,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.agent.run_agent_cycle",
         "schedule": crontab(hour="0,5,10,15,20", minute=0),  # 5시간마다
     },
-    # 글로벌 배치 실행 (하루 3회: 06:00, 12:00, 18:00)
-    # 콘텐츠 생성 (요약, 타임라인 등) 담당
-    "run-global-batch-morning": {
-        "task": "app.tasks.batch.run_global_batch",
-        "schedule": crontab(hour=6, minute=0),
-        "args": ("scheduled",)
-    },
-    "run-global-batch-noon": {
-        "task": "app.tasks.batch.run_global_batch",
-        "schedule": crontab(hour=12, minute=0),
-        "args": ("scheduled",)
-    },
-    "run-global-batch-evening": {
-        "task": "app.tasks.batch.run_global_batch",
-        "schedule": crontab(hour=18, minute=0),
-        "args": ("scheduled",)
-    },
     # 아침 데일리 다이제스트 발송 (매일 오전 8시)
     # 어제 있었던 이슈를 요약해서 이메일로 발송
     "send-morning-digest": {

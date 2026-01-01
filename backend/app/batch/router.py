@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_async_session
 from app.core.config import settings
-from app.batch.service import GlobalBatchService
+from app.batch.models import BatchRun
 from app.batch.schemas import GlobalBatchStatusResponse, BatchTaskResponse
 from app.auth.models import User
 from app.auth.router import current_active_user
@@ -26,62 +27,25 @@ async def get_global_batch_status(
     db: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user)
 ):
-    """글로벌 배치 상태 조회 (read-only)"""
-    service = GlobalBatchService(db)
-    status = await service.get_status()
+    """배치 상태 조회 (히스토리용)"""
+    # 총 실행 횟수
+    result = await db.execute(select(func.count(BatchRun.id)))
+    total_runs = result.scalar()
+
+    # 마지막 완료된 배치
+    result = await db.execute(
+        select(BatchRun)
+        .where(BatchRun.status == "completed")
+        .order_by(BatchRun.completed_at.desc())
+        .limit(1)
+    )
+    last_batch = result.scalar_one_or_none()
 
     return GlobalBatchStatusResponse(
-        schedule=status["schedule"],
-        last_run_at=status["last_run_at"],
-        total_runs=status["total_runs"],
-        last_issues_created=status["last_issues_created"]
-    )
-
-
-@router.post("/run", response_model=BatchTaskResponse)
-async def run_batch_now(
-    user: User = Depends(current_active_user)
-):
-    """배치 수동 실행 (개발/테스트용)"""
-    from app.tasks.batch import run_global_batch
-
-    print(f"[BATCH] /run endpoint called by user: {user.id}")
-    task = run_global_batch.delay("manual")
-    print(f"[BATCH] Task queued with id: {task.id}")
-
-    return BatchTaskResponse(
-        task_id=task.id,
-        status="queued"
-    )
-
-
-@router.post("/run/cron", response_model=BatchTaskResponse)
-async def run_batch_cron(
-    _: bool = Depends(verify_cron_secret)
-):
-    """배치 실행 (Render Cron용, 인증 불필요)"""
-    from app.tasks.batch import run_global_batch
-
-    task = run_global_batch.delay("scheduled")
-
-    return BatchTaskResponse(
-        task_id=task.id,
-        status="queued"
-    )
-
-
-@router.post("/notifications/send", response_model=BatchTaskResponse)
-async def send_notifications_cron(
-    _: bool = Depends(verify_cron_secret)
-):
-    """알림 발송 (Render Cron용, 인증 불필요)"""
-    from app.tasks.batch import send_scheduled_notifications
-
-    task = send_scheduled_notifications.delay()
-
-    return BatchTaskResponse(
-        task_id=task.id,
-        status="queued"
+        schedule=["Agent runs at 0,5,10,15,20h KST"],
+        last_run_at=last_batch.completed_at if last_batch else None,
+        total_runs=total_runs,
+        last_issues_created=last_batch.issues_created if last_batch else 0
     )
 
 

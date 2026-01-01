@@ -30,6 +30,9 @@ class Issue(Base, UUIDMixin, TimestampMixin):
 class IssueDailySnapshot(Base, UUIDMixin):
     """이슈 일간 스냅샷"""
     __tablename__ = "issue_daily_snapshots"
+    __table_args__ = (
+        UniqueConstraint('issue_id', 'date', name='uq_issue_daily_snapshots_issue_id_date'),
+    )
 
     issue_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

@@ -336,17 +336,33 @@ class IssueService:
                         continue
 
                     issue.last_seen_at = today
-                    issue.total_snapshots += 1
 
-                    # 스냅샷 생성
-                    snapshot = IssueDailySnapshot(
-                        issue_id=issue.id,
-                        batch_run_id=batch_run_id,
-                        date=today,
-                        article_count=len(articles_to_save),
-                        summary=f"임베딩 매칭으로 {len(articles_to_save)}개 기사 수집"
+                    # 스냅샷 생성 또는 업데이트
+                    existing_snapshot = await self.db.execute(
+                        select(IssueDailySnapshot).where(
+                            IssueDailySnapshot.issue_id == issue.id,
+                            IssueDailySnapshot.date == today
+                        )
                     )
-                    self.db.add(snapshot)
+                    snapshot = existing_snapshot.scalar_one_or_none()
+
+                    if snapshot:
+                        # 기존 스냅샷 업데이트
+                        snapshot.article_count += len(articles_to_save)
+                        if batch_run_id and not snapshot.batch_run_id:
+                            snapshot.batch_run_id = batch_run_id
+                        print(f"[ISSUE]   Updated existing snapshot for '{issue.name}' (added {len(articles_to_save)} articles)")
+                    else:
+                        # 새 스냅샷 생성
+                        issue.total_snapshots += 1
+                        snapshot = IssueDailySnapshot(
+                            issue_id=issue.id,
+                            batch_run_id=batch_run_id,
+                            date=today,
+                            article_count=len(articles_to_save),
+                            summary=f"임베딩 매칭으로 {len(articles_to_save)}개 기사 수집"
+                        )
+                        self.db.add(snapshot)
                     await self.db.flush()
 
                     # 기사 저장 (임베딩 포함)
@@ -424,16 +440,34 @@ class IssueService:
                     await self.db.flush()
                     print(f"[ISSUE]   Created new issue: '{item.name}'")
 
-                # 일간 스냅샷 생성
-                snapshot = IssueDailySnapshot(
-                    issue_id=issue.id,
-                    batch_run_id=batch_run_id,
-                    date=today,
-                    article_count=len(item.article_indices),
-                    sentiment_score=None,
-                    summary=item.summary
+                # 일간 스냅샷 생성 또는 업데이트
+                existing_snapshot = await self.db.execute(
+                    select(IssueDailySnapshot).where(
+                        IssueDailySnapshot.issue_id == issue.id,
+                        IssueDailySnapshot.date == today
+                    )
                 )
-                self.db.add(snapshot)
+                snapshot = existing_snapshot.scalar_one_or_none()
+
+                if snapshot:
+                    # 기존 스냅샷 업데이트
+                    snapshot.article_count += len(item.article_indices)
+                    if batch_run_id and not snapshot.batch_run_id:
+                        snapshot.batch_run_id = batch_run_id
+                    if item.summary:
+                        snapshot.summary = item.summary
+                    print(f"[ISSUE]   Updated existing snapshot for '{item.name}' (date={today})")
+                else:
+                    # 새 스냅샷 생성
+                    snapshot = IssueDailySnapshot(
+                        issue_id=issue.id,
+                        batch_run_id=batch_run_id,
+                        date=today,
+                        article_count=len(item.article_indices),
+                        sentiment_score=None,
+                        summary=item.summary
+                    )
+                    self.db.add(snapshot)
                 await self.db.flush()
 
                 # 5.1 네이버 API로 기사 상세 검색 + 중복 제거

@@ -3,13 +3,11 @@ from app.batch.schemas import (
     GlobalBatchStatusResponse,
     BatchTaskResponse,
 )
-from app.batch.service import GlobalBatchService
 from app.batch.router import router
 
 __all__ = [
     "BatchRun",
     "GlobalBatchStatusResponse",
     "BatchTaskResponse",
-    "GlobalBatchService",
     "router",
 ]
