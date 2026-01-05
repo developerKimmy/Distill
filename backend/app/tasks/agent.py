@@ -1,11 +1,34 @@
 """Agent Celery 태스크"""
 import asyncio
 import logging
+import traceback
 
 from app.core.celery_app import celery_app
 from app.core.database import create_async_session_factory
+from app.core.config import settings
+from app.common.utils import EmailService
 
 logger = logging.getLogger(__name__)
+
+
+def _send_error_alert(error_type: str, error_message: str, traceback_str: str = ""):
+    """에러 알림 발송 헬퍼"""
+    if not settings.ADMIN_EMAIL:
+        return
+    try:
+        email_service = EmailService(
+            gmail_user=settings.GMAIL_USER,
+            gmail_app_password=settings.GMAIL_APP_PASSWORD
+        )
+        email_service.send_error_alert(
+            recipient=settings.ADMIN_EMAIL,
+            error_type=error_type,
+            error_message=error_message,
+            location="Agent Task",
+            traceback_str=traceback_str
+        )
+    except Exception as e:
+        logger.error(f"에러 알림 발송 실패: {e}")
 
 
 @celery_app.task(bind=True, name="app.tasks.agent.run_agent_cycle")
@@ -37,6 +60,11 @@ def run_agent_cycle(self):
                 }
             except Exception as e:
                 logger.error(f"Agent task failed: {e}")
+                _send_error_alert(
+                    error_type="Agent Task Error",
+                    error_message=str(e),
+                    traceback_str=traceback.format_exc()
+                )
                 return {
                     "status": "failed",
                     "error": str(e),

@@ -5,6 +5,7 @@
 Pipeline: Collect → Extract → Resolve → Match → Enrich → Detect
 """
 import logging
+import traceback
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
@@ -19,6 +20,8 @@ from app.monitoring.nodes import (
     enrich_node,
     detect_node,
 )
+from app.core.config import settings
+from app.common.utils import EmailService
 
 logger = logging.getLogger(__name__)
 
@@ -90,4 +93,45 @@ async def run_monitoring(
         state["errors"].append(str(e))
         state["current_step"] = "failed"
 
+        # 에러 알림 발송
+        _send_error_alert(
+            error_type="Pipeline Error",
+            error_message=str(e),
+            location=f"run_monitoring (step: {state.get('current_step', 'unknown')})",
+            traceback_str=traceback.format_exc(),
+            extra_info={
+                "run_id": run_id,
+                "collected": len(state.get('collected_articles', [])),
+                "matched": len(state.get('matched_results', [])),
+            }
+        )
+
     return state
+
+
+def _send_error_alert(
+    error_type: str,
+    error_message: str,
+    location: str = "",
+    traceback_str: str = "",
+    extra_info: dict | None = None
+) -> None:
+    """에러 알림 발송 헬퍼"""
+    if not settings.ADMIN_EMAIL:
+        return
+
+    try:
+        email_service = EmailService(
+            gmail_user=settings.GMAIL_USER,
+            gmail_app_password=settings.GMAIL_APP_PASSWORD
+        )
+        email_service.send_error_alert(
+            recipient=settings.ADMIN_EMAIL,
+            error_type=error_type,
+            error_message=error_message,
+            location=location,
+            traceback_str=traceback_str,
+            extra_info=extra_info
+        )
+    except Exception as e:
+        logger.error(f"에러 알림 발송 실패: {e}")

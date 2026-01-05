@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.monitoring.state import MonitoringState, EventData
 from app.issues.models import Issue, IssueArticle
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,6 @@ logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 
 # 이벤트 감지 임계값
-SURGE_THRESHOLD = 5  # 하루에 5개 이상이면 surge
 SURGE_RATIO = 2.0    # 평균 대비 2배 이상이면 surge
 
 
@@ -133,7 +133,7 @@ class DetectNode:
         for issue_id, data in issue_article_counts.items():
             today_count = data["count"]
 
-            if today_count >= SURGE_THRESHOLD:
+            if today_count >= settings.SURGE_THRESHOLD:
                 # 과거 평균과 비교
                 avg_count = await self._get_average_article_count(
                     UUID(issue_id), db
@@ -155,7 +155,7 @@ class DetectNode:
                         f"[이벤트] 기사 급증: {data['name']} "
                         f"({today_count}개, 평균 {avg_count:.1f}개)"
                     )
-                elif avg_count == 0 and today_count >= SURGE_THRESHOLD:
+                elif avg_count == 0 and today_count >= settings.SURGE_THRESHOLD:
                     # 기존 데이터 없지만 충분히 많은 경우
                     event = EventData(
                         event_type="article_surge",

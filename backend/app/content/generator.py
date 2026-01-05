@@ -31,9 +31,6 @@ KST = timezone(timedelta(hours=9))
 class ContentGenerator:
     """RAG 기반 콘텐츠 생성기"""
 
-    # 검증이 필요한 최소 기사 수
-    VERIFICATION_THRESHOLD = 5
-
     def __init__(self, db: AsyncSession):
         self.db = db
         self.llm = OpenAI(
@@ -86,7 +83,7 @@ class ContentGenerator:
 
         # 4. Tavily 검증 (기사 5개 미만인 경우)
         verification_result = None
-        if len(articles) < self.VERIFICATION_THRESHOLD and self.tavily_provider:
+        if len(articles) < settings.VERIFICATION_MIN_ARTICLES and self.tavily_provider:
             logger.info(f"기사 {len(articles)}개 - Tavily 검증 수행")
             verification_result = await self._verify_with_tavily(issue.name, articles)
 

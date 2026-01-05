@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.issues.models import Issue, IssueArticle, IssueContent, IssueEmbedding
 from app.core.agent.tools import EmbeddingProvider
+from app.core.config import settings
 
 
 class SearchService:
@@ -94,7 +95,7 @@ class SearchService:
                 "similarity": float(row[8])
             }
             for row in rows
-            if row[8] >= 0.4  # 최소 유사도 필터
+            if row[8] >= settings.SEARCH_MIN_SIMILARITY
         ]
 
     async def search_articles(
@@ -187,7 +188,7 @@ class SearchService:
             similarity = float(row[8])
 
             # 최소 유사도 필터
-            if similarity < 0.4:
+            if similarity < settings.SEARCH_MIN_SIMILARITY:
                 continue
 
             if content_id in seen_ids:

@@ -11,11 +11,9 @@ from app.monitoring.state import MonitoringState, ArticleData
 from app.monitoring.collectors import GoogleNewsProvider, NaverNewsProvider, NewsItem
 from app.core.agent.tools import EmbeddingProvider
 from app.issues.models import Issue, IssueArticle, IssueEmbedding
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-# 유사도 임계값 (이 값 이상이면 중복으로 판단)
-SIMILARITY_THRESHOLD = 0.85
 
 
 class CollectNode:
@@ -209,7 +207,7 @@ class CollectNode:
                 if sim > max_similarity:
                     max_similarity = sim
 
-            if max_similarity < SIMILARITY_THRESHOLD:
+            if max_similarity < settings.ARTICLE_DEDUP_THRESHOLD:
                 filtered_articles.append(article)
                 filtered_embeddings.append(embedding)
             else:

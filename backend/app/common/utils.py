@@ -541,3 +541,110 @@ class EmailService:
         except Exception as e:
             print(f"[EMAIL] 다이제스트 발송 실패: {e}")
             return False
+
+    def send_error_alert(
+        self,
+        recipient: str,
+        error_type: str,
+        error_message: str,
+        location: str = "",
+        traceback_str: str = "",
+        extra_info: dict | None = None
+    ) -> bool:
+        """에러 알림 이메일 발송
+
+        Args:
+            recipient: 수신자 이메일 (관리자)
+            error_type: 에러 유형 (예: "Pipeline Error", "API Error")
+            error_message: 에러 메시지
+            location: 에러 발생 위치 (파일, 함수 등)
+            traceback_str: 스택 트레이스 문자열
+            extra_info: 추가 정보 딕셔너리
+        """
+        if not self.gmail_user or not self.gmail_app_password:
+            print("[EMAIL] Gmail 설정 없음, 에러 알림 스킵")
+            return False
+
+        if not recipient:
+            print("[EMAIL] 관리자 이메일 없음, 에러 알림 스킵")
+            return False
+
+        try:
+            now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+            subject = f"[DISTILL ERROR] {error_type}"
+
+            # 추가 정보 HTML
+            extra_info_html = ""
+            if extra_info:
+                extra_rows = ""
+                for key, value in extra_info.items():
+                    extra_rows += f"""
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #fecaca; background: #fff;">{key}</td>
+                        <td style="padding: 8px; border: 1px solid #fecaca; background: #fff;">{value}</td>
+                    </tr>
+                    """
+                extra_info_html = f"""
+                <h3 style="color: #991b1b; margin-top: 20px;">추가 정보</h3>
+                <table style="border-collapse: collapse; width: 100%;">
+                    {extra_rows}
+                </table>
+                """
+
+            # 스택 트레이스 HTML
+            traceback_html = ""
+            if traceback_str:
+                traceback_html = f"""
+                <h3 style="color: #991b1b; margin-top: 20px;">Stack Trace</h3>
+                <pre style="background: #1f2937; color: #f9fafb; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px;">{traceback_str}</pre>
+                """
+
+            html_body = f"""
+            <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #fef2f2;">
+                <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #dc2626;">
+                    <h2 style="color: #dc2626; margin-bottom: 8px;">⚠️ {error_type}</h2>
+                    <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+                        발생 시간: {now}
+                    </p>
+
+                    <table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #fecaca; background: #fef2f2; font-weight: 600; width: 100px;">에러 메시지</td>
+                            <td style="padding: 8px; border: 1px solid #fecaca; background: #fff; color: #dc2626;">{error_message}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #fecaca; background: #fef2f2; font-weight: 600;">발생 위치</td>
+                            <td style="padding: 8px; border: 1px solid #fecaca; background: #fff;">{location or "Unknown"}</td>
+                        </tr>
+                    </table>
+
+                    {extra_info_html}
+                    {traceback_html}
+
+                    <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">
+                        이 메일은 DISTILL 시스템 에러 자동 알림입니다.
+                    </p>
+                </div>
+            </body>
+            </html>
+            """
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = self.gmail_user
+            msg["To"] = recipient
+            msg.attach(MIMEText(html_body, "html"))
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.gmail_user, self.gmail_app_password)
+                server.sendmail(self.gmail_user, recipient, msg.as_string())
+
+            print(f"[EMAIL] 에러 알림 발송: {recipient} ({error_type})")
+            return True
+
+        except Exception as e:
+            print(f"[EMAIL] 에러 알림 발송 실패: {e}")
+            return False

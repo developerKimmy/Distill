@@ -82,6 +82,25 @@ class Settings(BaseSettings):
     # Cron Secret (Render Cron 요청 검증용, 선택)
     CRON_SECRET: str = ""
 
+    # ===== Thresholds =====
+    # 매칭
+    EMBEDDING_MATCH_THRESHOLD: float = 0.65  # Entity 매칭된 이슈 중 임베딩 비교
+    EMBEDDING_HIGH_THRESHOLD: float = 0.78   # Entity 없이 임베딩만으로 매칭
+    UNASSIGNED_SIMILARITY_THRESHOLD: float = 0.65  # UNASSIGNED 기사 간 유사도
+    ARTICLE_DEDUP_THRESHOLD: float = 0.85  # 기사 중복 제거 유사도
+
+    # 검색
+    SEARCH_MIN_SIMILARITY: float = 0.4  # 검색 결과 최소 유사도
+
+    # 콘텐츠 생성
+    VERIFICATION_MIN_ARTICLES: int = 5  # Tavily 검증 필요 기사 수 기준
+
+    # 감지
+    SURGE_THRESHOLD: int = 5  # 하루 기사 수 surge 기준
+
+    # 에러 알림
+    ADMIN_EMAIL: str = ""  # 에러 발생 시 알림 받을 이메일
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

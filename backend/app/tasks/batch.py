@@ -1,11 +1,34 @@
 """Celery 태스크 - 다이제스트 생성 및 이메일 발송"""
 import asyncio
+import traceback
 from datetime import datetime, timezone, timedelta
 
 from app.core.celery_app import celery_app
 from app.core.database import SessionLocal, create_async_session_factory
+from app.core.config import settings
+from app.common.utils import EmailService
 
 KST = timezone(timedelta(hours=9))
+
+
+def _send_error_alert(error_type: str, error_message: str, traceback_str: str = "", location: str = ""):
+    """에러 알림 발송 헬퍼"""
+    if not settings.ADMIN_EMAIL:
+        return
+    try:
+        email_service = EmailService(
+            gmail_user=settings.GMAIL_USER,
+            gmail_app_password=settings.GMAIL_APP_PASSWORD
+        )
+        email_service.send_error_alert(
+            recipient=settings.ADMIN_EMAIL,
+            error_type=error_type,
+            error_message=error_message,
+            location=location or "Batch Task",
+            traceback_str=traceback_str
+        )
+    except Exception as e:
+        print(f"[BATCH] 에러 알림 발송 실패: {e}")
 
 
 @celery_app.task(bind=True, name="app.tasks.batch.generate_daily_digest")
@@ -44,6 +67,12 @@ def generate_daily_digest(self):
                     }
             except Exception as e:
                 print(f"[DIGEST] Digest generation failed: {e}")
+                _send_error_alert(
+                    error_type="Digest Generation Error",
+                    error_message=str(e),
+                    traceback_str=traceback.format_exc(),
+                    location="generate_daily_digest"
+                )
                 return {
                     "status": "failed",
                     "error": str(e),
@@ -187,4 +216,10 @@ def send_morning_digest(self):
 
     except Exception as e:
         print(f"[DIGEST] Morning digest failed: {e}")
+        _send_error_alert(
+            error_type="Morning Digest Error",
+            error_message=str(e),
+            traceback_str=traceback.format_exc(),
+            location="send_morning_digest"
+        )
         return {"status": "failed", "error": str(e)}

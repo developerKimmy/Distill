@@ -20,13 +20,9 @@ from app.issues.models import (
     Issue, IssueArticle, IssueEmbedding, Entity, IssueEntity,
     UNASSIGNED_ISSUE_ID
 )
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-# 임계값 설정
-EMBEDDING_MATCH_THRESHOLD = 0.65  # Entity 매칭된 이슈 중 임베딩 비교
-EMBEDDING_HIGH_THRESHOLD = 0.78   # Entity 없이 임베딩만으로 매칭 (+ 충돌 체크)
-UNASSIGNED_SIMILARITY_THRESHOLD = 0.65  # UNASSIGNED 기사들 간 유사도
 
 # 한국 시간대
 KST = timezone(timedelta(hours=9))
@@ -159,7 +155,7 @@ class MatchNode:
                 embedding, entity_matched_issues, db
             )
 
-            if best_match and best_match["similarity"] >= EMBEDDING_MATCH_THRESHOLD:
+            if best_match and best_match["similarity"] >= settings.EMBEDDING_MATCH_THRESHOLD:
                 # Entity ✓ + Embedding ✓ → 매칭
                 return await self._finalize_match(
                     idx, article, ner_data, best_match, db
@@ -397,7 +393,7 @@ class MatchNode:
                         "similarity": similarity,
                     }
 
-        if best_match and best_match["similarity"] >= EMBEDDING_HIGH_THRESHOLD:
+        if best_match and best_match["similarity"] >= settings.EMBEDDING_HIGH_THRESHOLD:
             return best_match
         return None
 
@@ -639,7 +635,7 @@ class MatchNode:
             if row_embedding is None:
                 continue
             similarity = self._cosine_similarity(embedding, list(row_embedding))
-            if similarity >= UNASSIGNED_SIMILARITY_THRESHOLD:
+            if similarity >= settings.UNASSIGNED_SIMILARITY_THRESHOLD:
                 # 유사한 UNASSIGNED 기사 발견 → 새 이슈로 승격
                 similar_article_id = row[0]
                 similar_title = row[1]
