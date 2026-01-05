@@ -17,12 +17,11 @@ from app.core.base import Base
 from app.core.config import settings
 from app.auth.models import User
 from app.settings.models import UserSettings
-from app.batch.models import BatchRun
 from app.issues.models import (
-    Issue, IssueDailySnapshot, IssueArticle,
-    IssueKeyword, IssueEmbedding, IssueContent
+    Entity, Issue, IssueEntity, IssueArticle,
+    IssueContent, IssueEmbedding, IssueKeyword, IssueInsight,
+    IssueFollow, DailyDigest
 )
-from app.insights.models import IssueInsight
 from app.notifications.models import Notification, AgentRun
 
 

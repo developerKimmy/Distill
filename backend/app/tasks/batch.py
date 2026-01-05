@@ -1,10 +1,57 @@
-"""Celery 태스크 - 이메일 발송"""
+"""Celery 태스크 - 다이제스트 생성 및 이메일 발송"""
+import asyncio
 from datetime import datetime, timezone, timedelta
 
 from app.core.celery_app import celery_app
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, create_async_session_factory
 
 KST = timezone(timedelta(hours=9))
+
+
+@celery_app.task(bind=True, name="app.tasks.batch.generate_daily_digest")
+def generate_daily_digest(self):
+    """데일리 다이제스트 생성 (매일 오후 11시)
+
+    오늘 하루 이슈를 요약해서 다이제스트 생성
+    """
+    from app.content.digest import DigestGenerator
+
+    print("[DIGEST] Daily digest generation started")
+
+    async def _generate():
+        AsyncSession = create_async_session_factory()
+
+        async with AsyncSession() as db:
+            try:
+                generator = DigestGenerator(db)
+                today = datetime.now(KST).date()
+
+                digest = await generator.generate_daily_digest(today)
+
+                if digest:
+                    await db.commit()
+                    print(f"[DIGEST] Digest generated for {today}")
+                    return {
+                        "status": "completed",
+                        "date": str(today),
+                    }
+                else:
+                    print(f"[DIGEST] No issues to generate digest for {today}")
+                    return {
+                        "status": "skipped",
+                        "reason": "no_issues",
+                        "date": str(today),
+                    }
+            except Exception as e:
+                print(f"[DIGEST] Digest generation failed: {e}")
+                return {
+                    "status": "failed",
+                    "error": str(e),
+                }
+
+    result = asyncio.run(_generate())
+    print(f"[DIGEST] Daily digest generation completed: {result}")
+    return result
 
 
 @celery_app.task(bind=True, name="app.tasks.batch.send_morning_digest")
@@ -84,6 +131,7 @@ def send_morning_digest(self):
                     new_issues_count += 1
 
                 by_category[category].append({
+                    "id": str(issue.id),
                     "name": issue.name,
                     "article_count": snapshot.article_count,
                     "is_new": is_new,

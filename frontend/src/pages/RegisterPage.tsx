@@ -83,7 +83,7 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-stone-50">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
         <div className="flex flex-col items-center mb-8">
-          <img src={logo} alt="DSTILL" className="h-16 mb-2" />
+          <img src={logo} alt="DISTILL" className="h-16 mb-2" />
           <span className="text-sm text-gray-500">회원가입</span>
         </div>
 

@@ -173,12 +173,12 @@ class EmailService:
             now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
             duration_min = duration_seconds / 60
 
-            subject = f"[DSTILL] 배치 완료 - {issues_count}개 이슈 수집됨"
+            subject = f"[DISTILL] 배치 완료 - {issues_count}개 이슈 수집됨"
 
             html_body = f"""
             <html>
             <body style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2>🎯 DSTILL 배치 완료</h2>
+                <h2>🎯 DISTILL 배치 완료</h2>
                 <table style="border-collapse: collapse; margin: 20px 0;">
                     <tr>
                         <td style="padding: 8px; border: 1px solid #ddd;"><strong>완료 시간</strong></td>
@@ -197,7 +197,7 @@ class EmailService:
                         <td style="padding: 8px; border: 1px solid #ddd;">{duration_min:.1f}분</td>
                     </tr>
                 </table>
-                <p style="color: #666; font-size: 12px;">이 메일은 DSTILL 자동 알림입니다.</p>
+                <p style="color: #666; font-size: 12px;">이 메일은 DISTILL 자동 알림입니다.</p>
             </body>
             </html>
             """
@@ -258,7 +258,7 @@ class EmailService:
             category_text = ", ".join(categories) if categories else "전체"
             link_url = magic_link_url or "https://kimmykim.dev"
 
-            subject = f"[DSTILL] 오늘의 이슈 {len(issues)}개 - {time_str}"
+            subject = f"[DISTILL] 오늘의 이슈 {len(issues)}개 - {time_str}"
 
             # 이슈 목록 HTML 생성
             issues_html = ""
@@ -291,7 +291,7 @@ class EmailService:
 
                     <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
                         <a href="{link_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
-                            DSTILL에서 자세히 보기
+                            DISTILL에서 자세히 보기
                         </a>
                         <p style="color: #9ca3af; font-size: 11px; margin-top: 8px;">
                             이 링크는 10분간 유효합니다.
@@ -299,7 +299,7 @@ class EmailService:
                     </div>
 
                     <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">
-                        이 메일은 DSTILL 자동 알림입니다. 설정에서 알림을 변경할 수 있습니다.
+                        이 메일은 DISTILL 자동 알림입니다. 설정에서 알림을 변경할 수 있습니다.
                     </p>
                 </div>
             </body>
@@ -360,7 +360,7 @@ class EmailService:
             base_url = magic_link_url.split("?")[0].rsplit("/", 1)[0] if magic_link_url else "https://kimmykim.dev"
             link_url = magic_link_url or "https://kimmykim.dev"
 
-            subject = f"[DSTILL] 팔로우 이슈 업데이트 {len(issues)}건 - {time_str}"
+            subject = f"[DISTILL] 팔로우 이슈 업데이트 {len(issues)}건 - {time_str}"
 
             # 이슈 목록 HTML 생성
             issues_html = ""
@@ -395,7 +395,7 @@ class EmailService:
 
                     <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
                         <a href="{link_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">
-                            DSTILL에서 자세히 보기
+                            DISTILL에서 자세히 보기
                         </a>
                         <p style="color: #9ca3af; font-size: 11px; margin-top: 8px;">
                             이 링크는 10분간 유효합니다.
@@ -446,7 +446,7 @@ class EmailService:
             total_issues: 총 이슈 수
             new_issues_count: 신규 이슈 수
             total_articles: 총 기사 수
-            categories: 카테고리별 이슈 [{category, issues: [{name, article_count, is_new}], total_articles}]
+            categories: 카테고리별 이슈 [{category, issues: [{id, name, article_count, is_new}], total_articles}]
             base_url: 사이트 기본 URL
         """
         if not self.gmail_user or not self.gmail_app_password:
@@ -459,7 +459,7 @@ class EmailService:
             date_obj = datetime.strptime(digest_date, "%Y-%m-%d")
             date_display = date_obj.strftime("%Y년 %m월 %d일")
 
-            subject = f"[DSTILL] {date_display} 브리핑 - {total_issues}개 이슈"
+            subject = f"[DISTILL] {date_display} 브리핑 - {total_issues}개 이슈"
 
             # 카테고리별 이슈 HTML 생성
             categories_html = ""
@@ -467,9 +467,11 @@ class EmailService:
                 issues_list = ""
                 for issue in cat["issues"][:5]:  # 카테고리당 최대 5개
                     new_badge = '<span style="background: #fee2e2; color: #dc2626; padding: 1px 6px; border-radius: 10px; font-size: 10px; margin-left: 4px;">NEW</span>' if issue.get("is_new") else ""
+                    issue_id = issue.get("id", "")
+                    issue_url = f"{base_url}/issues/{issue_id}" if issue_id else base_url
                     issues_list += f"""
                     <div style="padding: 8px 0; border-bottom: 1px solid #f3f4f6;">
-                        <span style="font-weight: 500; color: #1f2937;">{issue['name']}</span>{new_badge}
+                        <a href="{issue_url}" style="font-weight: 500; color: #1f2937; text-decoration: none;">{issue['name']}</a>{new_badge}
                         <span style="color: #9ca3af; font-size: 12px; margin-left: 8px;">기사 {issue.get('article_count', 0)}개</span>
                     </div>
                     """
@@ -513,15 +515,9 @@ class EmailService:
                     <!-- 카테고리별 이슈 -->
                     {categories_html}
 
-                    <!-- CTA 버튼 -->
-                    <div style="text-align: center; margin-top: 24px;">
-                        <a href="{base_url}/digest/{digest_date}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                            전체 브리핑 보기 →
-                        </a>
-                    </div>
-
                     <p style="color: #9ca3af; font-size: 12px; margin-top: 24px; text-align: center;">
-                        이 메일은 DSTILL 데일리 다이제스트입니다.
+                        이 메일은 DISTILL 데일리 다이제스트입니다.<br>
+                        <a href="{base_url}" style="color: #f59e0b;">DISTILL 바로가기</a>
                     </p>
                 </div>
             </body>

@@ -14,7 +14,7 @@ INSECURE_DEFAULTS = [
 
 class Settings(BaseSettings):
     # App
-    APP_NAME: str = "DSTILL"
+    APP_NAME: str = "DISTILL"
     DEBUG: bool = True
     SECRET_KEY: str = "your-secret-key-change-in-production"
 

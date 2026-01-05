@@ -1,55 +1,85 @@
 from datetime import datetime, date
 from uuid import UUID
 from sqlalchemy import String, Text, Integer, Float, Date, DateTime, ForeignKey, func, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
 from app.core.base import Base, UUIDMixin, TimestampMixin
 
 
+# System issue ID for unassigned articles
+UNASSIGNED_ISSUE_ID = UUID('00000000-0000-0000-0000-000000000000')
+
+
+class Entity(Base, UUIDMixin):
+    """엔티티 마스터 (Who, Where)"""
+    __tablename__ = "entities"
+    __table_args__ = (
+        UniqueConstraint('name', 'type', name='uq_entities_name_type'),
+    )
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)  # person, org, loc
+    aliases: Mapped[dict] = mapped_column(JSONB, server_default='[]')
+    metadata_: Mapped[dict] = mapped_column('metadata', JSONB, server_default='{}')
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Relationships
+    issue_entities = relationship("IssueEntity", back_populates="entity", cascade="all, delete-orphan")
+
+
 class Issue(Base, UUIDMixin, TimestampMixin):
-    """이슈 마스터 - 클러스터링된 뉴스 이슈"""
+    """이슈 마스터 (Mother Table)"""
     __tablename__ = "issues"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    first_seen_at: Mapped[date] = mapped_column(Date, nullable=False)
-    last_seen_at: Mapped[date] = mapped_column(Date, nullable=False)
-    total_snapshots: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
-
-    # 이슈 매칭용 임베딩 (이슈명 + 요약 기반)
+    category: Mapped[str | None] = mapped_column(String(50))
+    what_type: Mapped[str | None] = mapped_column(String(50))  # IMPEACHMENT, TRIAL, etc.
+    what_summary: Mapped[str | None] = mapped_column(String(255))
+    first_seen_at: Mapped[date | None] = mapped_column(Date)
+    last_seen_at: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(50), server_default='active')  # active, archived, system
     name_embedding = mapped_column(Vector(384), nullable=True)
 
     # Relationships
-    snapshots = relationship("IssueDailySnapshot", back_populates="issue", cascade="all, delete-orphan")
+    articles = relationship("IssueArticle", back_populates="issue", cascade="all, delete-orphan")
+    contents = relationship("IssueContent", back_populates="issue", cascade="all, delete-orphan")
+    embeddings = relationship("IssueEmbedding", back_populates="issue", cascade="all, delete-orphan")
+    keywords = relationship("IssueKeyword", back_populates="issue", cascade="all, delete-orphan")
+    insights = relationship("IssueInsight", back_populates="issue", cascade="all, delete-orphan")
+    issue_entities = relationship("IssueEntity", back_populates="issue", cascade="all, delete-orphan")
     followers = relationship("IssueFollow", back_populates="issue", cascade="all, delete-orphan")
 
 
-class IssueDailySnapshot(Base, UUIDMixin):
-    """이슈 일간 스냅샷"""
-    __tablename__ = "issue_daily_snapshots"
+class IssueEntity(Base, UUIDMixin):
+    """이슈 ↔ 엔티티 매핑"""
+    __tablename__ = "issue_entities"
     __table_args__ = (
-        UniqueConstraint('issue_id', 'date', name='uq_issue_daily_snapshots_issue_id_date'),
+        UniqueConstraint('issue_id', 'entity_id', name='uq_issue_entities'),
     )
 
     issue_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("issues.id"),
-        nullable=False
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
     )
-    batch_run_id: Mapped[UUID | None] = mapped_column(
+    entity_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("batch_runs.id"),
-        nullable=True
+        ForeignKey("entities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
     )
-    date: Mapped[date] = mapped_column(Date, nullable=False)
-    article_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 콘텐츠 처리 상태: pending -> processing -> completed / failed
-    content_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    role: Mapped[str] = mapped_column(String(50), nullable=False)  # primary, secondary, related
+    first_seen_at: Mapped[date | None] = mapped_column(Date)
+    last_seen_at: Mapped[date | None] = mapped_column(Date)
+    mention_count: Mapped[int] = mapped_column(Integer, server_default='1')
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -57,57 +87,37 @@ class IssueDailySnapshot(Base, UUIDMixin):
     )
 
     # Relationships
-    issue = relationship("Issue", back_populates="snapshots")
-    batch_run = relationship("BatchRun", back_populates="issue_snapshots")
-    articles = relationship("IssueArticle", back_populates="snapshot", cascade="all, delete-orphan")
-    keywords = relationship("IssueKeyword", back_populates="snapshot", cascade="all, delete-orphan")
-    insights = relationship("IssueInsight", back_populates="snapshot", cascade="all, delete-orphan")
-    embeddings = relationship("IssueEmbedding", back_populates="snapshot", cascade="all, delete-orphan")
-    contents = relationship("IssueContent", back_populates="snapshot", cascade="all, delete-orphan")
+    issue = relationship("Issue", back_populates="issue_entities")
+    entity = relationship("Entity", back_populates="issue_entities")
 
 
 class IssueArticle(Base, UUIDMixin):
-    """이슈-기사 매핑"""
+    """이슈에 귀속된 기사"""
     __tablename__ = "issue_articles"
     __table_args__ = (
-        # 같은 스냅샷에 동일 URL 중복 방지
-        UniqueConstraint('snapshot_id', 'url', name='uq_issue_article_snapshot_url'),
+        UniqueConstraint('url', name='uq_issue_articles_url'),
     )
 
-    snapshot_id: Mapped[UUID] = mapped_column(
+    issue_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("issue_daily_snapshots.id"),
+        ForeignKey("issues.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    url: Mapped[str] = mapped_column(Text, nullable=False, index=True)
-    press: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    press: Mapped[str | None] = mapped_column(String(100))
+    source: Mapped[str | None] = mapped_column(String(50))  # google_news, naver, tavily
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    collected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
-
-    # 제목 임베딩 (유사 기사 중복 체크용)
-    title_embedding = mapped_column(Vector(384), nullable=True)
-
-    # Relationships
-    snapshot = relationship("IssueDailySnapshot", back_populates="articles")
-
-
-class IssueKeyword(Base, UUIDMixin):
-    """이슈 키워드"""
-    __tablename__ = "issue_keywords"
-
-    snapshot_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("issue_daily_snapshots.id"),
-        nullable=False
-    )
-    keyword: Mapped[str] = mapped_column(String(200), nullable=False)
+    entities: Mapped[dict] = mapped_column(JSONB, server_default='{}')  # NER 결과
+    status: Mapped[str] = mapped_column(String(20), server_default='pending')  # pending, matched
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -115,44 +125,22 @@ class IssueKeyword(Base, UUIDMixin):
     )
 
     # Relationships
-    snapshot = relationship("IssueDailySnapshot", back_populates="keywords")
-
-
-class IssueEmbedding(Base, UUIDMixin):
-    """이슈 임베딩 (RAG용)"""
-    __tablename__ = "issue_embeddings"
-
-    snapshot_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("issue_daily_snapshots.id"),
-        nullable=False
-    )
-    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding = mapped_column(Vector(384), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False
-    )
-
-    # Relationships
-    snapshot = relationship("IssueDailySnapshot", back_populates="embeddings")
+    issue = relationship("Issue", back_populates="articles")
 
 
 class IssueContent(Base, UUIDMixin):
     """생성된 콘텐츠"""
     __tablename__ = "issue_contents"
 
-    snapshot_id: Mapped[UUID] = mapped_column(
+    issue_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("issue_daily_snapshots.id"),
+        ForeignKey("issues.id", ondelete="CASCADE"),
         nullable=False
     )
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-    confidence_score: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500))
+    content: Mapped[str | None] = mapped_column(Text)
+    verified: Mapped[bool] = mapped_column(default=False)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -160,42 +148,88 @@ class IssueContent(Base, UUIDMixin):
     )
 
     # Relationships
-    snapshot = relationship("IssueDailySnapshot", back_populates="contents")
+    issue = relationship("Issue", back_populates="contents")
 
 
-class DailyDigest(Base, UUIDMixin):
-    """일간 다이제스트 요약"""
-    __tablename__ = "daily_digests"
-    __table_args__ = (
-        UniqueConstraint('date', name='uq_daily_digest_date'),
+class IssueEmbedding(Base, UUIDMixin):
+    """이슈 임베딩 (RAG용)"""
+    __tablename__ = "issue_embeddings"
+
+    issue_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False
     )
-
-    date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
-    summary: Mapped[str] = mapped_column(Text, nullable=False)  # LLM 생성 요약
+    content_type: Mapped[str | None] = mapped_column(String(50))  # article, keyword, summary
+    content: Mapped[str | None] = mapped_column(Text)
+    embedding = mapped_column(Vector(384))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
 
+    # Relationships
+    issue = relationship("Issue", back_populates="embeddings")
+
+
+class IssueKeyword(Base, UUIDMixin):
+    """이슈 키워드"""
+    __tablename__ = "issue_keywords"
+
+    issue_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    keyword: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    issue = relationship("Issue", back_populates="keywords")
+
+
+class IssueInsight(Base, UUIDMixin):
+    """이슈 인사이트"""
+    __tablename__ = "issue_insights"
+
+    issue_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    verified_angles: Mapped[dict | None] = mapped_column(JSONB)
+    content_directions: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    issue = relationship("Issue", back_populates="insights")
+
 
 class IssueFollow(Base, UUIDMixin):
     """이슈 팔로우"""
     __tablename__ = "issue_follows"
     __table_args__ = (
-        # 같은 유저가 같은 이슈 중복 팔로우 방지
-        UniqueConstraint('user_id', 'issue_id', name='uq_issue_follow_user_issue'),
+        UniqueConstraint('user_id', 'issue_id', name='uq_issue_follows'),
     )
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
     issue_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("issues.id"),
+        ForeignKey("issues.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -208,3 +242,16 @@ class IssueFollow(Base, UUIDMixin):
     # Relationships
     user = relationship("User", back_populates="followed_issues")
     issue = relationship("Issue", back_populates="followers")
+
+
+class DailyDigest(Base, UUIDMixin):
+    """일간 다이제스트 요약"""
+    __tablename__ = "daily_digests"
+
+    date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )

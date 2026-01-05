@@ -10,13 +10,16 @@ import ReportPage from './pages/ReportPage';
 import IssuePage from './pages/IssuePage';
 import IssueListPage from './pages/IssueListPage';
 import DailyDigestPage from './pages/DailyDigestPage';
+import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
 import NotificationsPage from './pages/NotificationsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,
+      staleTime: 1000 * 60 * 5,  // 5분간 fresh 상태 유지
+      gcTime: 1000 * 60 * 30,    // 30분간 캐시 보존
+      refetchOnWindowFocus: false, // 창 포커스시 재요청 안함
       retry: 1,
     },
   },
@@ -39,6 +42,7 @@ export default function App() {
             <Route path="digest/:date" element={<DailyDigestPage />} />
             <Route path="issues" element={<IssueListPage />} />
             <Route path="issues/:issueId" element={<IssuePage />} />
+            <Route path="search" element={<SearchPage />} />
             {/* 로그인 필요 페이지 */}
             <Route
               path="notifications"

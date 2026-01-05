@@ -202,6 +202,136 @@ def content_generation_prompt(
 """
 
 
+def ner_extraction_prompt(articles: list[dict]) -> str:
+    """NER 추출 프롬프트 (육하원칙 기반: Who, Where, What)
+
+    Args:
+        articles: [{"idx": 0, "title": "...", "description": "..."}, ...]
+    """
+    articles_text = "\n".join([
+        f"[{a['idx']}] {a['title']}" + (f"\n    {a['description'][:200]}" if a.get('description') else "")
+        for a in articles
+    ])
+
+    return f"""다음 뉴스 기사들에서 핵심 정보를 추출해주세요.
+
+## 기사 목록
+{articles_text}
+
+## 추출 규칙
+
+각 기사에서 다음을 추출:
+
+1. **who**: 핵심 인물/조직 (최대 3개)
+   - name: 이름 (예: "윤석열", "삼성전자")
+   - role: 역할/직책 (예: "대통령", "피고인", "원고")
+   - type: "person" 또는 "org"
+
+2. **where**: 장소 (최대 2개, 해당 없으면 빈 배열)
+   - 구체적 장소만 (예: "서울중앙지법", "국회")
+   - 국가명만 있으면 생략
+
+3. **what_type**: 사건 유형 (하나만 선택)
+   - TRIAL: 재판/판결
+   - INVESTIGATION: 수사/조사
+   - LEGISLATION: 입법/법안
+   - POLICY: 정책/제도
+   - ACCIDENT: 사고/재해
+   - DIPLOMACY: 외교/회담
+   - ECONOMY: 경제/시장
+   - ENTERTAINMENT: 연예/스포츠/문화
+   - OTHER: 기타
+
+4. **what_summary**: 핵심 내용 한 문장 (30자 이내)
+
+## JSON 형식으로 응답
+
+```json
+{{
+  "results": [
+    {{
+      "idx": 0,
+      "who": [{{"name": "윤석열", "role": "대통령", "type": "person"}}],
+      "where": ["헌법재판소"],
+      "what_type": "TRIAL",
+      "what_summary": "탄핵심판 최종 선고"
+    }},
+    {{
+      "idx": 1,
+      "who": [{{"name": "삼성전자", "role": "피고", "type": "org"}}],
+      "where": [],
+      "what_type": "INVESTIGATION",
+      "what_summary": "공정위 과징금 부과"
+    }}
+  ]
+}}
+```
+
+**주의**:
+- idx는 기사 번호와 정확히 일치해야 함
+- 정보가 불분명하면 빈 배열 또는 null 사용
+- JSON만 출력 (다른 설명 없이)
+"""
+
+
+def entity_resolution_prompt(articles: list[dict]) -> str:
+    """Entity 해소 프롬프트 - 제목의 entity를 본문 기반으로 정규화
+
+    Args:
+        articles: [{"idx": 0, "entities": [...], "title": "...", "description": "..."}, ...]
+    """
+    articles_text = ""
+    for a in articles:
+        entities = a.get("entities", [])
+        entity_names = [e.get("name", "") for e in entities if e.get("name")]
+
+        articles_text += f"""
+[{a['idx']}]
+제목: {a['title']}
+본문: {a.get('description', '')[:300] if a.get('description') else '없음'}
+추출된 entity: {entity_names}
+"""
+
+    return f"""다음 기사들에서 추출된 entity 이름을 본문 내용을 참고하여 정규화해주세요.
+
+## 기사 목록
+{articles_text}
+
+## 규칙
+1. 본문에서 풀네임을 찾아서 매핑
+   - "윤 대통령" → 본문에 "윤석열 대통령" 있으면 → "윤석열"
+   - "이 대표" → 본문에 "이재명 대표" 있으면 → "이재명"
+
+2. 직책/호칭은 제거하고 이름만
+   - "윤석열 대통령" → "윤석열"
+   - "삼성전자 이재용 회장" → "이재용" (인물), "삼성전자" (조직)
+
+3. 본문에서 확인 안 되면 원본 유지
+
+4. 조직명은 정식 명칭으로
+   - "삼성" → "삼성전자" (문맥상 명확하면)
+   - "현대차" → "현대자동차"
+
+## JSON 형식으로 응답
+
+```json
+{{
+  "results": [
+    {{
+      "idx": 0,
+      "resolved": [
+        {{"original": "윤 대통령", "canonical": "윤석열", "type": "person"}},
+        {{"original": "헌재", "canonical": "헌법재판소", "type": "org"}}
+      ]
+    }}
+  ]
+}}
+```
+
+**주의**: 본문에서 확인 안 되는 경우 original과 canonical을 동일하게 유지
+"""
+
+
 def daily_digest_prompt(date_str: str, issues_by_category: dict[str, list[dict]]) -> str:
     """일간 다이제스트 요약 프롬프트"""
 
@@ -247,7 +377,7 @@ def daily_digest_prompt(date_str: str, issues_by_category: dict[str, list[dict]]
 
 ---
 
-*DSTILL 리서치팀*
+*DISTILL 리서치팀*
 ```
 
 ## 규칙

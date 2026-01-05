@@ -6,17 +6,19 @@ from app.core.config import settings
 # 모델 import (relationship 등록용)
 from app.auth.models import User
 from app.settings.models import UserSettings
-from app.batch.models import BatchRun
-from app.issues.models import Issue, IssueDailySnapshot, IssueArticle
-from app.insights.models import IssueInsight
+from app.issues.models import (
+    Entity, Issue, IssueEntity, IssueArticle,
+    IssueContent, IssueEmbedding, IssueKeyword, IssueInsight,
+    IssueFollow, DailyDigest
+)
 from app.notifications.models import Notification, AgentRun
 
 from app.auth.router import router as auth_router
 from app.notifications.router import router as notifications_router
 from app.issues.router import router as issues_router, report_router
-from app.batch.router import router as batch_router
 from app.settings.router import router as settings_router
 from app.content import router as content_router
+from app.search import router as search_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -24,20 +26,13 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# CORS 설정
-origins = [o.strip() for o in settings.CORS_ORIGINS.split(",")]
-# 와일드카드 패턴 확인 (*.onrender.com 등)
-origin_regex = None
-if any("*" in o for o in origins):
-    # https://*.onrender.com -> https://.*\.onrender\.com
-    patterns = [o.replace(".", r"\.").replace("*", ".*") for o in origins if "*" in o]
-    origin_regex = f"({'|'.join(patterns)})"
-    origins = [o for o in origins if "*" not in o]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
-    allow_origin_regex=origin_regex,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "https://kimmykim.dev",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,10 +42,10 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api")
 app.include_router(issues_router, prefix="/api")
 app.include_router(report_router, prefix="/api")
-app.include_router(batch_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
+app.include_router(search_router, prefix="/api")
 
 @app.get("/health", tags=["health"])
 def health_check():

@@ -2,11 +2,11 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { FollowButton } from './FollowButton';
 import { formatShortDate } from '../../utils/dateFormat';
-import type { Issue } from '../../types';
+import type { IssueListItem } from '../../types';
 
 interface IssueCardProps {
-  issue: Issue;
-  onFollowClick: (e: React.MouseEvent, issue: Issue) => void;
+  issue: IssueListItem;
+  onFollowClick: (e: React.MouseEvent, issue: IssueListItem) => void;
 }
 
 function IssueCardComponent({ issue, onFollowClick }: IssueCardProps) {
@@ -21,18 +21,19 @@ function IssueCardComponent({ issue, onFollowClick }: IssueCardProps) {
             {issue.name}
           </h3>
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            {formatShortDate(issue.firstSeenAt)} ~ {formatShortDate(issue.lastSeenAt)}
-            <span className="ml-2">({issue.totalSnapshots}일)</span>
+            {issue.firstSeenAt && formatShortDate(issue.firstSeenAt)}
+            {issue.firstSeenAt && issue.lastSeenAt && ' ~ '}
+            {issue.lastSeenAt && formatShortDate(issue.lastSeenAt)}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {issue.latestArticleCount && (
+          {issue.articleCount > 0 && (
             <span className="text-xs sm:text-sm text-amber-600 font-medium whitespace-nowrap">
-              기사 {issue.latestArticleCount}개
+              기사 {issue.articleCount}개
             </span>
           )}
           <FollowButton
-            isFollowing={issue.isFollowing ?? false}
+            isFollowing={issue.isFollowing}
             onClick={(e) => onFollowClick(e, issue)}
           />
         </div>

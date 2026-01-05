@@ -107,7 +107,7 @@ export default function Layout() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/">
-            <img src={logo} alt="DSTILL" className="h-10 sm:h-14" />
+            <img src={logo} alt="DISTILL" className="h-10 sm:h-14" />
           </Link>
 
           {/* 데스크탑 네비게이션 */}

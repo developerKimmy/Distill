@@ -1,88 +1,172 @@
-// 이슈 마스터
-export interface Issue {
+// ===== Entity =====
+export interface Entity {
   id: string;
   name: string;
-  category: string | null;
-  firstSeenAt: string;
-  lastSeenAt: string;
-  totalSnapshots: number;
-  status: string;
-  latestArticleCount?: number | null;
-  latestSentimentScore?: number | null;
-  hasContent?: boolean;
-  isFollowing?: boolean;
+  type: string; // person, org, loc
+  aliases: string[];
 }
 
-// 일간 스냅샷
-export interface IssueDailySnapshot {
-  id: string;
-  issueId: string;
-  date: string;
-  articleCount: number;
-  sentimentScore: number | null;
-  summary: string | null;
-  createdAt: string;
-}
-
-// 기사
+// ===== Article =====
 export interface IssueArticle {
   id: string;
   title: string;
   description: string | null;
   url: string;
   press: string | null;
+  source: string | null;
   publishedAt: string | null;
+  collectedAt: string;
+  status: string;
+  entities: Record<string, unknown>;
 }
 
-// 생성된 콘텐츠
+// ===== Content =====
 export interface IssueContent {
   id: string;
-  title: string;
-  content: string;
+  title: string | null;
+  content: string | null;
   verified: boolean;
   confidenceScore: number;
   createdAt: string;
 }
 
-// 일간 리포트 (스냅샷 + 기사 포함)
-export interface DailyReport {
-  date: string;
-  snapshots: (IssueDailySnapshot & {
-    issue: Issue;
-    articles: IssueArticle[];
-  })[];
+// ===== Issue =====
+export interface Issue {
+  id: string;
+  name: string;
+  category: string | null;
+  whatType: string | null;
+  whatSummary: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  status: string;
 }
 
-// 이슈 상세 (히스토리 포함)
+export interface IssueListItem extends Issue {
+  articleCount: number;
+  hasContent: boolean;
+  isFollowing: boolean;
+  primaryEntities: Entity[];
+}
+
 export interface IssueDetail extends Issue {
-  snapshots: (IssueDailySnapshot & {
-    articles: IssueArticle[];
-    contents: IssueContent[];
-  })[];
+  articles: IssueArticle[];
+  contents: IssueContent[];
+  entities: Entity[];
+  keywords: string[];
   isFollowing: boolean;
 }
 
-// 글로벌 배치 상태
-export interface GlobalBatchStatus {
-  schedule: string[];  // 서버 배치 시간 ["06:00", "12:00", "18:00"]
-  lastRunAt: string | null;
-  totalRuns: number;
-  lastIssuesCreated: number;
+// ===== Daily Report =====
+export interface DailyReportIssue {
+  id: string;
+  name: string;
+  category: string | null;
+  whatType: string | null;
+  articleCount: number;
+  articles: IssueArticle[];
 }
 
-// 알림 설정
-export interface NotificationSettings {
-  enabled: boolean;
-  times: string[];
-  timezone: string;
-  categories: string[];
-  createdAt: string;  // 가입 날짜
+export interface DailyReport {
+  date: string;
+  issues: DailyReportIssue[];
+  totalIssues: number;
+  totalArticles: number;
 }
 
-// Re-export for backward compatibility (use utils/constants.ts instead)
-export { AVAILABLE_CATEGORIES } from '../utils/constants';
+// ===== Daily Digest =====
+export interface DigestIssue {
+  id: string;
+  name: string;
+  category: string | null;
+  whatType: string | null;
+  articleCount: number;
+  summary: string | null;
+  contentTitle: string | null;
+  contentPreview: string | null;
+  isNew: boolean;
+  primaryEntities: Entity[];
+}
 
-// 알림
+export interface DigestCategory {
+  category: string;
+  issues: DigestIssue[];
+  totalArticles: number;
+}
+
+export interface DailyDigest {
+  date: string;
+  totalIssues: number;
+  totalArticles: number;
+  newIssuesCount: number;
+  categories: DigestCategory[];
+  updatedAt: string | null;
+  digestSummary: string | null;
+}
+
+// ===== Calendar =====
+export interface CalendarIssue {
+  id: string;
+  name: string;
+  category: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  displayDate: string | null;  // 달력 표시용 날짜 (created_at vs first_seen_at 크로스체크)
+}
+
+// ===== Search =====
+export interface IssueSearchResult {
+  id: string;
+  name: string;
+  category: string | null;
+  whatType: string | null;
+  whatSummary: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  status: string | null;
+  articleCount: number | null;
+  hasContent: boolean | null;
+  similarity: number | null;
+}
+
+export interface ArticleSearchResult {
+  id: string;
+  title: string;
+  description: string | null;
+  url: string;
+  press: string | null;
+  publishedAt: string | null;
+  collectedAt: string | null;
+  issueId: string;
+  issueName: string | null;
+}
+
+export interface ContentSearchResult {
+  id: string;
+  issueId: string;
+  issueName: string | null;
+  title: string | null;
+  contentPreview: string | null;
+  verified: boolean | null;
+  confidenceScore: number | null;
+  createdAt: string | null;
+  similarity: number | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  issues: IssueSearchResult[];
+  articles: ArticleSearchResult[];
+  contents: ContentSearchResult[];
+  total: number;
+}
+
+export interface SuggestResponse {
+  query: string;
+  suggestions: string[];
+}
+
+// ===== Notification =====
 export interface Notification {
   id: string;
   type: string;
@@ -101,10 +185,30 @@ export interface NotificationListResponse {
   unreadCount: number;
 }
 
-// API 응답
+// ===== Settings =====
+export interface NotificationSettings {
+  enabled: boolean;
+  times: string[];
+  timezone: string;
+  categories: string[];
+  createdAt: string;
+}
+
+// ===== Batch =====
+export interface GlobalBatchStatus {
+  schedule: string[];
+  lastRunAt: string | null;
+  totalRuns: number;
+  lastIssuesCreated: number;
+}
+
+// ===== API Response =====
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
   page: number;
   size: number;
 }
+
+// Re-export for backward compatibility
+export { AVAILABLE_CATEGORIES } from '../utils/constants';

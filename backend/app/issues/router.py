@@ -9,16 +9,16 @@ from app.issues.schemas import (
     IssueListResponse,
     IssueListItem,
     IssueDetailResponse,
-    IssueDailySnapshotDetailResponse,
     IssueArticleResponse,
     IssueContentResponse,
-    DailyReportResponse,
-    DailySnapshotWithIssue,
     IssueResponse,
     CalendarIssueResponse,
     DailyDigestResponse,
     DigestCategoryGroup,
     DigestIssueItem,
+    DailyReportResponse,
+    DailyReportIssue,
+    EntityResponse,
 )
 from app.auth.models import User
 from app.auth.router import fastapi_users
@@ -32,10 +32,7 @@ current_active_user = fastapi_users.current_user(active=True)
 
 
 def get_categories_from_query(category_param: str | None) -> list[str] | None:
-    """카테고리 필터: 항상 쿼리 파라미터 사용 (헤더 필터 = 화면 조절)
-
-    Note: 설정 페이지의 카테고리는 이메일 알림용으로만 사용
-    """
+    """카테고리 필터: 항상 쿼리 파라미터 사용"""
     if category_param:
         return [c.strip() for c in category_param.split(",") if c.strip()]
     return None
@@ -46,18 +43,22 @@ async def list_issues_for_calendar(
         categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
 ):
-    """달력용 경량 이슈 목록 (빠른 응답) - 비로그인 허용"""
+    """달력용 경량 이슈 목록 - 비로그인 허용
+
+    display_date: created_at과 first_seen_at 차이가 30일 이상이면 created_at 사용
+    """
     category_list = get_categories_from_query(categories)
     service = IssueService(db)
     issues = await service.list_issues_for_calendar(categories=category_list)
 
     return [
         CalendarIssueResponse(
-            id=str(issue.id),
-            name=issue.name,
-            category=issue.category,
-            first_seen_at=issue.first_seen_at,
-            last_seen_at=issue.last_seen_at,
+            id=issue["id"],
+            name=issue["name"],
+            category=issue["category"],
+            first_seen_at=issue["first_seen_at"],
+            last_seen_at=issue["last_seen_at"],
+            display_date=issue["display_date"],
         )
         for issue in issues
     ]
@@ -66,7 +67,7 @@ async def list_issues_for_calendar(
 @router.get("", response_model=IssueListResponse)
 async def list_issues(
         page: int = Query(1, ge=1),
-        size: int = Query(20, ge=1, le=100),
+        size: int = Query(20, ge=1, le=500),
         categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
         user: User | None = Depends(optional_current_user)
@@ -84,26 +85,37 @@ async def list_issues(
 
     items = []
     for issue in issues:
-        latest_snapshot = issue.snapshots[0] if issue.snapshots else None
+        # 기사 수
+        article_count = len(issue.articles) if issue.articles else 0
 
-        # Check if any snapshot has content
-        has_content = any(
-            len(snapshot.contents) > 0
-            for snapshot in issue.snapshots
-        )
+        # 콘텐츠 유무
+        has_content = bool(issue.contents)
+
+        # 주요 엔티티
+        primary_entities = []
+        if hasattr(issue, 'issue_entities'):
+            for ie in issue.issue_entities:
+                if ie.role == "primary" and ie.entity:
+                    primary_entities.append(EntityResponse(
+                        id=str(ie.entity.id),
+                        name=ie.entity.name,
+                        type=ie.entity.type,
+                        aliases=ie.entity.aliases or []
+                    ))
 
         items.append(IssueListItem(
             id=str(issue.id),
             name=issue.name,
             category=issue.category,
+            what_type=issue.what_type,
+            what_summary=issue.what_summary,
             first_seen_at=issue.first_seen_at,
             last_seen_at=issue.last_seen_at,
-            total_snapshots=issue.total_snapshots,
             status=issue.status,
-            latest_article_count=latest_snapshot.article_count if latest_snapshot else None,
-            latest_sentiment_score=latest_snapshot.sentiment_score if latest_snapshot else None,
+            article_count=article_count,
             has_content=has_content,
             is_following=issue.id in followed_issue_ids,
+            primary_entities=primary_entities,
         ))
 
     return IssueListResponse(
@@ -120,7 +132,7 @@ async def get_issue(
         db: AsyncSession = Depends(get_async_session),
         user: User | None = Depends(optional_current_user)
 ):
-    """이슈 상세 조회 (스냅샷 히스토리 포함)"""
+    """이슈 상세 조회"""
     service = IssueService(db)
     issue = await service.get_issue(issue_id)
 
@@ -132,48 +144,65 @@ async def get_issue(
     if user:
         is_following = await service.is_following(user.id, issue_id)
 
+    # 기사 목록
+    articles = [
+        IssueArticleResponse(
+            id=str(article.id),
+            title=article.title,
+            description=article.description,
+            url=article.url,
+            press=article.press,
+            source=article.source,
+            published_at=article.published_at,
+            collected_at=article.collected_at,
+            status=article.status,
+            entities=article.entities or {}
+        )
+        for article in sorted(issue.articles, key=lambda a: a.collected_at, reverse=True)
+    ]
+
+    # 콘텐츠 목록
+    contents = [
+        IssueContentResponse(
+            id=str(content.id),
+            title=content.title,
+            content=content.content,
+            verified=content.verified,
+            confidence_score=content.confidence_score,
+            created_at=content.created_at
+        )
+        for content in sorted(issue.contents, key=lambda c: c.created_at, reverse=True)
+    ]
+
+    # 엔티티 목록
+    entities = []
+    if hasattr(issue, 'issue_entities'):
+        for ie in issue.issue_entities:
+            if ie.entity:
+                entities.append(EntityResponse(
+                    id=str(ie.entity.id),
+                    name=ie.entity.name,
+                    type=ie.entity.type,
+                    aliases=ie.entity.aliases or []
+                ))
+
+    # 키워드
+    keywords = [kw.keyword for kw in issue.keywords if kw.keyword]
+
     return IssueDetailResponse(
         id=str(issue.id),
         name=issue.name,
         category=issue.category,
+        what_type=issue.what_type,
+        what_summary=issue.what_summary,
         first_seen_at=issue.first_seen_at,
         last_seen_at=issue.last_seen_at,
-        total_snapshots=issue.total_snapshots,
         status=issue.status,
         is_following=is_following,
-        snapshots=[
-            IssueDailySnapshotDetailResponse(
-                id=str(snapshot.id),
-                date=snapshot.date,
-                article_count=snapshot.article_count,
-                sentiment_score=snapshot.sentiment_score,
-                summary=snapshot.summary,
-                created_at=snapshot.created_at,
-                articles=[
-                    IssueArticleResponse(
-                        id=str(article.id),
-                        title=article.title,
-                        description=article.description,
-                        url=article.url,
-                        press=article.press,
-                        published_at=article.published_at
-                    )
-                    for article in snapshot.articles
-                ],
-                contents=[
-                    IssueContentResponse(
-                        id=str(content.id),
-                        title=content.title,
-                        content=content.content,
-                        verified=content.verified,
-                        confidence_score=content.confidence_score,
-                        created_at=content.created_at
-                    )
-                    for content in snapshot.contents
-                ]
-            )
-            for snapshot in sorted(issue.snapshots, key=lambda s: s.date, reverse=True)
-        ]
+        articles=articles,
+        contents=contents,
+        entities=entities,
+        keywords=keywords,
     )
 
 
@@ -241,42 +270,37 @@ async def get_daily_report(
     """일간 리포트 조회 - 비로그인 허용"""
     category_list = get_categories_from_query(categories)
     service = IssueService(db)
-    snapshots = await service.get_daily_report(report_date, categories=category_list)
+    data = await service.get_daily_report(report_date, categories=category_list)
 
     return DailyReportResponse(
-        date=report_date,
-        snapshots=[
-            DailySnapshotWithIssue(
-                id=str(snapshot.id),
-                date=snapshot.date,
-                article_count=snapshot.article_count,
-                sentiment_score=snapshot.sentiment_score,
-                summary=snapshot.summary,
-                created_at=snapshot.created_at,
-                issue=IssueResponse(
-                    id=str(snapshot.issue.id),
-                    name=snapshot.issue.name,
-                    category=snapshot.issue.category,
-                    first_seen_at=snapshot.issue.first_seen_at,
-                    last_seen_at=snapshot.issue.last_seen_at,
-                    total_snapshots=snapshot.issue.total_snapshots,
-                    status=snapshot.issue.status,
-                ),
+        date=data["date"],
+        issues=[
+            DailyReportIssue(
+                id=issue["id"],
+                name=issue["name"],
+                category=issue["category"],
+                what_type=issue["what_type"],
+                article_count=issue["article_count"],
                 articles=[
                     IssueArticleResponse(
-                        id=str(article.id),
-                        title=article.title,
-                        description=article.description,
-                        url=article.url,
-                        press=article.press,
-                        published_at=article.published_at
+                        id=str(a.id),
+                        title=a.title,
+                        description=a.description,
+                        url=a.url,
+                        press=a.press,
+                        source=a.source,
+                        published_at=a.published_at,
+                        collected_at=a.collected_at,
+                        status=a.status,
+                        entities=a.entities or {}
                     )
-                    for article in snapshot.articles
+                    for a in issue["articles"]
                 ]
             )
-            for snapshot in snapshots
+            for issue in data["issues"]
         ],
-        total_issues=len(snapshots)
+        total_issues=data["total_issues"],
+        total_articles=data["total_articles"]
     )
 
 
@@ -285,10 +309,7 @@ async def get_daily_digest(
         digest_date: date,
         db: AsyncSession = Depends(get_async_session),
 ):
-    """데일리 다이제스트 조회 - 비로그인 허용
-
-    카테고리별로 그룹핑된 이슈 목록과 통계 반환
-    """
+    """데일리 다이제스트 조회 - 비로그인 허용"""
     service = IssueService(db)
     data = await service.get_daily_digest(digest_date)
 

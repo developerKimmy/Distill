@@ -4,19 +4,15 @@ import { useQuery } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getIssue } from '../api/issues';
-import { LoadingFallback, FollowButton } from '../components/common';
+import { LoadingFallback, FollowButton, CategoryBadge } from '../components/common';
 import { useFollowMutation } from '../hooks';
 import { formatShortDate, formatFullDate } from '../utils/dateFormat';
-import type { IssueDetail } from '../types';
+import type { IssueArticle, IssueContent } from '../types';
 
 const INITIAL_ARTICLE_COUNT = 10;
 
-// memo for list items only
-const ArticleCard = memo(function ArticleCard({
-  article
-}: {
-  article: IssueDetail['snapshots'][0]['articles'][0]
-}) {
+// 기사 카드 컴포넌트
+const ArticleCard = memo(function ArticleCard({ article }: { article: IssueArticle }) {
   return (
     <a
       href={article.url}
@@ -40,7 +36,8 @@ const ArticleCard = memo(function ArticleCard({
   );
 });
 
-function ArticleList({ articles }: { articles: IssueDetail['snapshots'][0]['articles'] }) {
+// 기사 목록 컴포넌트
+function ArticleList({ articles }: { articles: IssueArticle[] }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const hasMore = articles.length > INITIAL_ARTICLE_COUNT;
   const displayedArticles = isExpanded ? articles : articles.slice(0, INITIAL_ARTICLE_COUNT);
@@ -48,7 +45,10 @@ function ArticleList({ articles }: { articles: IssueDetail['snapshots'][0]['arti
 
   return (
     <div className="space-y-2 sm:space-y-3">
-      <h3 className="text-xs sm:text-sm font-medium text-gray-700">📰 관련 기사</h3>
+      <h3 className="text-xs sm:text-sm font-medium text-gray-700 flex items-center gap-2">
+        📰 관련 기사
+        <span className="text-gray-400">({articles.length}개)</span>
+      </h3>
       {displayedArticles.map((article) => (
         <ArticleCard key={article.id} article={article} />
       ))}
@@ -67,6 +67,28 @@ function ArticleList({ articles }: { articles: IssueDetail['snapshots'][0]['arti
         >
           접기
         </button>
+      )}
+    </div>
+  );
+}
+
+// 콘텐츠 카드 컴포넌트
+function ContentCard({ content }: { content: IssueContent }) {
+  return (
+    <div className="p-3 sm:p-4 bg-amber-50 border border-amber-200 rounded-lg">
+      <div className="flex items-center gap-2 mb-2">
+        <h4 className="font-semibold text-gray-900 text-sm sm:text-base">
+          {content.title || '콘텐츠'}
+        </h4>
+        <span className="text-[10px] sm:text-xs text-gray-500">
+          {formatFullDate(content.createdAt)}
+        </span>
+      </div>
+
+      {content.content && (
+        <div className="prose prose-sm prose-gray max-w-none overflow-x-auto">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>
+        </div>
       )}
     </div>
   );
@@ -91,54 +113,34 @@ export default function IssuePage() {
     },
   });
 
-  // 날짜별로 스냅샷 그룹핑
-  const groupedByDate = useMemo(() => {
-    if (!issue?.snapshots) return new Map<string, IssueDetail['snapshots']>();
+  // 날짜별로 기사 그룹핑
+  const groupedArticles = useMemo(() => {
+    if (!issue?.articles) return new Map<string, IssueArticle[]>();
 
-    const groups = new Map<string, IssueDetail['snapshots']>();
-    for (const snapshot of issue.snapshots) {
-      const dateKey = snapshot.date;
+    const groups = new Map<string, IssueArticle[]>();
+    for (const article of issue.articles) {
+      const dateKey = article.collectedAt?.split('T')[0] || 'unknown';
       if (!groups.has(dateKey)) {
         groups.set(dateKey, []);
       }
-      groups.get(dateKey)!.push(snapshot);
+      groups.get(dateKey)!.push(article);
     }
 
     // 날짜순 정렬된 Map 반환
     return new Map(
-      [...groups.entries()].sort((a, b) =>
-        new Date(b[0]).getTime() - new Date(a[0]).getTime()
-      )
+      [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]))
     );
-  }, [issue?.snapshots]);
+  }, [issue?.articles]);
 
-  const sortedDates = useMemo(() => [...groupedByDate.keys()], [groupedByDate]);
+  const sortedDates = useMemo(() => [...groupedArticles.keys()].filter(d => d !== 'unknown'), [groupedArticles]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  // 선택된 날짜의 스냅샷들 (시간순 정렬)
-  const selectedDateData = useMemo(() => {
+  // 선택된 날짜의 기사들
+  const selectedArticles = useMemo(() => {
     const date = selectedDate || sortedDates[0];
-    if (!date) return null;
-
-    const snapshots = groupedByDate.get(date) || [];
-    if (snapshots.length === 0) return null;
-
-    // 시간순 정렬 (오래된 순)
-    const sortedSnapshots = [...snapshots].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    // 모든 기사 통합 (중복 제거)
-    const allArticles = sortedSnapshots.flatMap(s => s.articles);
-    const totalArticleCount = sortedSnapshots.reduce((sum, s) => sum + s.articleCount, 0);
-
-    return {
-      date,
-      snapshots: sortedSnapshots,
-      articles: allArticles,
-      articleCount: totalArticleCount,
-    };
-  }, [selectedDate, sortedDates, groupedByDate]);
+    if (!date) return [];
+    return groupedArticles.get(date) || [];
+  }, [selectedDate, sortedDates, groupedArticles]);
 
   const isLoggedIn = !!localStorage.getItem('access_token');
 
@@ -152,22 +154,30 @@ export default function IssuePage() {
         <div className="space-y-6">
           {/* 헤더 */}
           <div>
-            <Link to="/" className="text-xs sm:text-sm text-gray-500 hover:text-gray-700">
-              ← 돌아가기
+            <Link to="/issues" className="text-xs sm:text-sm text-gray-500 hover:text-gray-700">
+              ← 이슈 목록
             </Link>
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mt-2">
               <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{issue.name}</h1>
-                <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                  {issue.category && (
-                    <span className="inline-block bg-gray-100 px-2 py-0.5 rounded mr-2">
-                      {issue.category}
+                <div className="flex items-center gap-2 mb-1">
+                  <CategoryBadge category={issue.category || '기타'} />
+                  {issue.whatType && (
+                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                      {issue.whatType}
                     </span>
                   )}
-                  <span className="block sm:inline mt-1 sm:mt-0">
-                    {formatFullDate(issue.firstSeenAt)} ~ {formatFullDate(issue.lastSeenAt)}
-                    <span className="ml-2">({issue.totalSnapshots}일간 추적)</span>
-                  </span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{issue.name}</h1>
+                {issue.whatSummary && (
+                  <p className="text-sm text-gray-600 mt-1">{issue.whatSummary}</p>
+                )}
+                <p className="text-xs sm:text-sm text-gray-500 mt-2">
+                  {issue.firstSeenAt && issue.lastSeenAt && (
+                    <span>
+                      {formatFullDate(issue.firstSeenAt)} ~ {formatFullDate(issue.lastSeenAt)}
+                    </span>
+                  )}
+                  <span className="ml-2">· {issue.articles.length}개 기사</span>
                 </p>
               </div>
               <FollowButton
@@ -178,6 +188,71 @@ export default function IssuePage() {
               />
             </div>
           </div>
+
+          {/* 키워드 */}
+          {issue.keywords && issue.keywords.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {issue.keywords.slice(0, 10).map((keyword, idx) => (
+                <span
+                  key={idx}
+                  className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full"
+                >
+                  #{keyword}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 엔티티 */}
+          {issue.entities && issue.entities.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {issue.entities.map((entity) => (
+                <span
+                  key={entity.id}
+                  className={`text-xs px-2 py-1 rounded-full ${
+                    entity.type === 'person' ? 'bg-purple-100 text-purple-700' :
+                    entity.type === 'org' ? 'bg-blue-100 text-blue-700' :
+                    'bg-green-100 text-green-700'
+                  }`}
+                >
+                  {entity.name}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 콘텐츠 */}
+          {issue.contents && issue.contents.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-base sm:text-lg font-semibold">📝 생성된 콘텐츠</h2>
+              {issue.contents.map((content) => (
+                <ContentCard key={content.id} content={content} />
+              ))}
+            </div>
+          )}
+
+          {/* 비로그인 CTA */}
+          {!isLoggedIn && (
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4 sm:p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="text-xl sm:text-2xl">📬</div>
+                <div className="flex-1">
+                  <h3 className="font-medium text-gray-900 text-xs sm:text-sm">
+                    이 이슈의 업데이트를 이메일로 받아보세요
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    관심 이슈를 팔로우하고 새 소식을 받아볼 수 있어요.
+                  </p>
+                </div>
+                <Link
+                  to="/register"
+                  className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-medium px-4 py-2 rounded-lg transition-colors text-center"
+                >
+                  시작하기
+                </Link>
+              </div>
+            </div>
+          )}
 
           {/* 날짜 선택 */}
           {sortedDates.length > 1 && (
@@ -193,82 +268,16 @@ export default function IssuePage() {
                   }`}
                 >
                   {formatShortDate(date)}
+                  <span className="ml-1 opacity-70">({groupedArticles.get(date)?.length || 0})</span>
                 </button>
               ))}
             </div>
           )}
 
-          {/* 선택된 날짜 정보 */}
-          {selectedDateData && (
-            <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 mb-3 sm:mb-4">
-                <h2 className="text-base sm:text-lg font-semibold">
-                  {formatFullDate(selectedDateData.date)}
-                </h2>
-                <span className="text-xs sm:text-sm text-amber-600 font-medium">
-                  기사 {selectedDateData.articleCount}개
-                </span>
-              </div>
-
-              {/* 최신 콘텐츠 */}
-              {selectedDateData.snapshots.length > 0 && (() => {
-                const latestSnapshot = selectedDateData.snapshots[selectedDateData.snapshots.length - 1];
-                return latestSnapshot.contents?.length > 0 ? (
-                  <div className="space-y-3 mb-6">
-                    {latestSnapshot.contents.map((content) => (
-                      <div
-                        key={content.id}
-                        className="p-3 sm:p-4 bg-amber-50 border border-amber-200 rounded-lg"
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <h4 className="font-semibold text-gray-900 text-sm sm:text-base">
-                            {content.title}
-                          </h4>
-                          {content.verified && (
-                            <span className="text-[10px] sm:text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
-                              검증됨
-                            </span>
-                          )}
-                        </div>
-                        <div className="prose prose-sm prose-gray max-w-none overflow-x-auto prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:bg-gray-100 prose-th:p-2 prose-td:border prose-td:border-gray-300 prose-td:p-2">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>
-                        </div>
-                        <div className="mt-2 text-[10px] sm:text-xs text-gray-500">
-                          신뢰도: {Math.round(content.confidenceScore * 100)}%
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-
-              {/* 비로그인 CTA */}
-              {!isLoggedIn && (
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4 sm:p-5 mb-4 sm:mb-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                    <div className="text-xl sm:text-2xl">📬</div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900 text-xs sm:text-sm">
-                        이 이슈의 업데이트를 이메일로 받아보세요
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        관심 이슈를 팔로우하고 새 소식을 받아볼 수 있어요.
-                      </p>
-                    </div>
-                    <Link
-                      to="/register"
-                      className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-medium px-4 py-2 rounded-lg transition-colors text-center"
-                    >
-                      시작하기
-                    </Link>
-                  </div>
-                </div>
-              )}
-
-              {/* 기사 목록 */}
-              <ArticleList articles={selectedDateData.articles} />
-            </div>
-          )}
+          {/* 기사 목록 */}
+          <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4">
+            <ArticleList articles={selectedArticles} />
+          </div>
         </div>
       )}
     </LoadingFallback>

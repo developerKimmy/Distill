@@ -4,7 +4,7 @@ from datetime import datetime
 from time import mktime
 from dataclasses import dataclass
 
-from app.core.agent.tools.naver_news import NewsItem
+from app.monitoring.collectors.naver_news import NewsItem
 
 
 class GoogleNewsProvider:

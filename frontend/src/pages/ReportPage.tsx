@@ -1,6 +1,8 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getDailyReport } from '../api/issues';
+import { CategoryBadge } from '../components/common';
+import type { DailyReportIssue } from '../types';
 
 export default function ReportPage() {
   const { date } = useParams<{ date: string }>();
@@ -28,14 +30,14 @@ export default function ReportPage() {
   }
 
   // 카테고리별 그룹핑
-  const groupedByCategory = report.snapshots.reduce((acc, snapshot) => {
-    const category = snapshot.issue.category || '기타';
+  const groupedByCategory = report.issues.reduce((acc, issue) => {
+    const category = issue.category || '기타';
     if (!acc[category]) {
       acc[category] = [];
     }
-    acc[category].push(snapshot);
+    acc[category].push(issue);
     return acc;
-  }, {} as Record<string, typeof report.snapshots>);
+  }, {} as Record<string, DailyReportIssue[]>);
 
   // 기사 수 기준 정렬
   Object.keys(groupedByCategory).forEach((category) => {
@@ -48,7 +50,7 @@ export default function ReportPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
@@ -59,65 +61,76 @@ export default function ReportPage() {
             {formatDate(date!)} 리포트
           </h1>
         </div>
-        <p className="text-sm text-gray-500">
-          총 {report.snapshots.length}개 이슈
-        </p>
+        <div className="text-right">
+          <p className="text-sm font-medium text-gray-900">
+            {report.totalIssues}개 이슈
+          </p>
+          <p className="text-xs text-gray-500">
+            총 {report.totalArticles}개 기사
+          </p>
+        </div>
       </div>
 
       {/* 카테고리별 이슈 */}
-      {Object.entries(groupedByCategory).map(([category, snapshots]) => (
+      {Object.entries(groupedByCategory).map(([category, issues]) => (
         <div key={category} className="space-y-3">
-          <h2 className="text-lg font-semibold text-gray-800">
-            {category}
-            <span className="ml-2 text-sm font-normal text-gray-500">
-              ({snapshots.length})
+          <div className="flex items-center gap-2">
+            <CategoryBadge category={category} size="md" />
+            <span className="text-sm text-gray-500">
+              {issues.length}개 이슈
             </span>
-          </h2>
+          </div>
 
           <div className="space-y-2">
-            {snapshots.map((snapshot) => (
+            {issues.map((issue) => (
               <Link
-                key={snapshot.id}
-                to={`/issues/${snapshot.issue.id}`}
+                key={issue.id}
+                to={`/issues/${issue.id}`}
                 className="block bg-white rounded-lg border border-gray-200 p-4 hover:border-amber-300 transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h3 className="font-medium text-gray-900">
-                      {snapshot.issue.name}
-                    </h3>
-                    {snapshot.summary && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-medium text-gray-900">
+                        {issue.name}
+                      </h3>
+                      {issue.whatType && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                          {issue.whatType}
+                        </span>
+                      )}
+                    </div>
+                    {/* 대표 기사 미리보기 */}
+                    {issue.articles && issue.articles.length > 0 && (
                       <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                        {snapshot.summary}
+                        {issue.articles[0].title}
                       </p>
                     )}
                   </div>
                   <div className="ml-4 text-right">
                     <p className="text-sm font-medium text-amber-600">
-                      기사 {snapshot.articleCount}개
+                      기사 {issue.articleCount}개
                     </p>
-                    {snapshot.issue.totalSnapshots > 1 && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        {snapshot.issue.totalSnapshots}일째 지속
-                      </p>
-                    )}
                   </div>
                 </div>
 
-                {/* 감성 점수 바 */}
-                {snapshot.sentimentScore !== null && (
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                      <span>부정</span>
-                      <span>긍정</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-red-400 via-yellow-400 to-green-400"
-                        style={{
-                          width: `${((snapshot.sentimentScore + 1) / 2) * 100}%`,
-                        }}
-                      />
+                {/* 기사 목록 미리보기 */}
+                {issue.articles && issue.articles.length > 1 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="space-y-1">
+                      {issue.articles.slice(1, 4).map((article) => (
+                        <p key={article.id} className="text-xs text-gray-500 truncate">
+                          · {article.title}
+                          {article.press && (
+                            <span className="text-gray-400"> ({article.press})</span>
+                          )}
+                        </p>
+                      ))}
+                      {issue.articles.length > 4 && (
+                        <p className="text-xs text-gray-400">
+                          +{issue.articles.length - 4}개 더
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -126,6 +139,13 @@ export default function ReportPage() {
           </div>
         </div>
       ))}
+
+      {/* 빈 상태 */}
+      {report.issues.length === 0 && (
+        <div className="text-center py-12">
+          <p className="text-gray-500">이 날짜에는 수집된 이슈가 없습니다.</p>
+        </div>
+      )}
     </div>
   );
 }

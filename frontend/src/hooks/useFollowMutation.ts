@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { followIssue, unfollowIssue } from '../api/issues';
 import { isLoggedIn } from '../utils/categories';
-import type { Issue } from '../types';
+import type { IssueListItem } from '../types';
 
 interface UseFollowMutationOptions {
   // Query key to update optimistically
@@ -15,18 +15,18 @@ interface UseFollowMutationOptions {
 const defaultUpdateFn = (old: unknown, issueId: string, isFollowing: boolean) => {
   if (!old || typeof old !== 'object') return old;
 
-  // Handle paginated response { items: Issue[] }
-  if ('items' in old && Array.isArray((old as { items: Issue[] }).items)) {
+  // Handle paginated response { items: IssueListItem[] }
+  if ('items' in old && Array.isArray((old as { items: IssueListItem[] }).items)) {
     return {
       ...old,
-      items: (old as { items: Issue[] }).items.map((issue) =>
+      items: (old as { items: IssueListItem[] }).items.map((issue) =>
         issue.id === issueId ? { ...issue, isFollowing } : issue
       ),
     };
   }
 
   // Handle single issue detail
-  if ('id' in old && (old as Issue).id === issueId) {
+  if ('id' in old && (old as { id: string }).id === issueId) {
     return { ...old, isFollowing };
   }
 
@@ -64,7 +64,7 @@ export function useFollowMutation({ queryKey, updateFn = defaultUpdateFn }: UseF
   });
 
   const handleFollowClick = useCallback(
-    (e: React.MouseEvent, issue: Issue) => {
+    (e: React.MouseEvent, issue: IssueListItem) => {
       e.preventDefault();
       e.stopPropagation();
 

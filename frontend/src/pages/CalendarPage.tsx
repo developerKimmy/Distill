@@ -75,6 +75,11 @@ const IssueBar = memo(function IssueBar({
   );
 });
 
+// 이슈의 달력 시작 날짜 결정 (displayDate 우선, 없으면 firstSeenAt)
+function getIssueStartDate(issue: CalendarIssue): string | null {
+  return issue.displayDate || issue.firstSeenAt;
+}
+
 // Pure function for week issues calculation
 function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefined): WeekIssue[] {
   if (!issues) return [];
@@ -88,14 +93,19 @@ function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefin
   const minStartDate = new Date(2025, 11, 25); // 2025-12-25
 
   const weekIssues = issues.filter((issue) => {
-    const issueStart = max([startOfDay(parseLocalDate(issue.firstSeenAt)), minStartDate]);
+    const startDateStr = getIssueStartDate(issue);
+    if (!startDateStr || !issue.lastSeenAt) return false;
+    const issueStart = max([startOfDay(parseLocalDate(startDateStr)), minStartDate]);
     const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
     return !isAfter(issueStart, weekEnd) && !isBefore(issueEnd, weekStart);
   });
 
   weekIssues.sort((a, b) => {
-    const aStart = max([parseLocalDate(a.firstSeenAt), minStartDate]);
-    const bStart = max([parseLocalDate(b.firstSeenAt), minStartDate]);
+    const aStartStr = getIssueStartDate(a);
+    const bStartStr = getIssueStartDate(b);
+    if (!aStartStr || !bStartStr || !a.lastSeenAt || !b.lastSeenAt) return 0;
+    const aStart = max([parseLocalDate(aStartStr), minStartDate]);
+    const bStart = max([parseLocalDate(bStartStr), minStartDate]);
     const aDuration = parseLocalDate(a.lastSeenAt).getTime() - aStart.getTime();
     const bDuration = parseLocalDate(b.lastSeenAt).getTime() - bStart.getTime();
     return aStart.getTime() !== bStart.getTime()
@@ -104,7 +114,9 @@ function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefin
   });
 
   weekIssues.forEach((issue) => {
-    const issueStart = max([startOfDay(parseLocalDate(issue.firstSeenAt)), minStartDate]);
+    const startDateStr = getIssueStartDate(issue);
+    if (!startDateStr || !issue.lastSeenAt) return;
+    const issueStart = max([startOfDay(parseLocalDate(startDateStr)), minStartDate]);
     const issueEnd = startOfDay(parseLocalDate(issue.lastSeenAt));
     const visibleStart = max([issueStart, weekStart]);
     const visibleEnd = min([issueEnd, weekEnd]);

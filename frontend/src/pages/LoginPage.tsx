@@ -33,7 +33,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-stone-50">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
         <div className="flex justify-center mb-8">
-          <img src={logo} alt="DSTILL" className="h-[120px]" />
+          <img src={logo} alt="DISTILL" className="h-[120px]" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">

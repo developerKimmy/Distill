@@ -9,13 +9,12 @@ from app.core.config import settings
 
 @dataclass
 class NewsItem:
-    """뉴스 아이템"""
+    """뉴스 아이템 (Collector DTO)"""
     title: str
     url: str
     press: str
     description: str | None = None
     published_at: datetime | None = None
-    title_embedding: list[float] | None = None  # 유사도 체크용 임베딩
 
 
 class NaverNewsProvider:

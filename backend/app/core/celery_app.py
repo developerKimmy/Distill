@@ -3,8 +3,11 @@ from celery.schedules import crontab
 
 from app.core.config import settings
 
+# 모든 모델을 올바른 순서로 import (relationship 해결)
+import app.core.models  # noqa: F401
+
 celery_app = Celery(
-    "dstill",
+    "distill",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
 )
@@ -30,8 +33,14 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.agent.run_agent_cycle",
         "schedule": crontab(hour="0,5,10,15,20", minute=0),  # 5시간마다
     },
+    # 데일리 다이제스트 생성 (매일 오후 11시)
+    # 오늘 하루 이슈를 요약해서 다이제스트 생성
+    "generate-daily-digest": {
+        "task": "app.tasks.batch.generate_daily_digest",
+        "schedule": crontab(hour=23, minute=0),
+    },
     # 아침 데일리 다이제스트 발송 (매일 오전 8시)
-    # 어제 있었던 이슈를 요약해서 이메일로 발송
+    # 미리 생성된 다이제스트를 이메일로 발송
     "send-morning-digest": {
         "task": "app.tasks.batch.send_morning_digest",
         "schedule": crontab(hour=8, minute=0),

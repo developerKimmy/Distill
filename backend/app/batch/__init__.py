@@ -1,13 +1,2 @@
-from app.batch.models import BatchRun
-from app.batch.schemas import (
-    GlobalBatchStatusResponse,
-    BatchTaskResponse,
-)
-from app.batch.router import router
-
-__all__ = [
-    "BatchRun",
-    "GlobalBatchStatusResponse",
-    "BatchTaskResponse",
-    "router",
-]
+# Deprecated: batch module removed in schema redesign
+# BatchRun table no longer exists
