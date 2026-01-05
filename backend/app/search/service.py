@@ -94,7 +94,7 @@ class SearchService:
                 "similarity": float(row[8])
             }
             for row in rows
-            if row[8] >= 0.3  # 최소 유사도 필터
+            if row[8] >= 0.4  # 최소 유사도 필터
         ]
 
     async def search_articles(
@@ -184,6 +184,12 @@ class SearchService:
 
         for row in rows:
             content_id = str(row[0])
+            similarity = float(row[8])
+
+            # 최소 유사도 필터
+            if similarity < 0.4:
+                continue
+
             if content_id in seen_ids:
                 continue
             seen_ids.add(content_id)
@@ -197,7 +203,7 @@ class SearchService:
                 "verified": row[5],
                 "confidence_score": float(row[6]) if row[6] else 0.0,
                 "created_at": row[7].isoformat() if row[7] else None,
-                "similarity": float(row[8])
+                "similarity": similarity
             })
 
         return unique_results

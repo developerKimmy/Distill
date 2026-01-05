@@ -18,6 +18,7 @@ from openai import OpenAI
 from app.core.config import settings
 from app.core.prompts import content_generation_prompt
 from app.core.agent.tools import EmbeddingProvider, YouTubeProvider, NeedsProvider
+from app.core.agent.tools.tavily import TavilyProvider
 from app.issues.models import (
     Issue, IssueArticle, IssueContent, IssueEmbedding, IssueInsight
 )
@@ -30,6 +31,9 @@ KST = timezone(timedelta(hours=9))
 class ContentGenerator:
     """RAG 기반 콘텐츠 생성기"""
 
+    # 검증이 필요한 최소 기사 수
+    VERIFICATION_THRESHOLD = 5
+
     def __init__(self, db: AsyncSession):
         self.db = db
         self.llm = OpenAI(
@@ -40,6 +44,13 @@ class ContentGenerator:
         self.embedding_provider = EmbeddingProvider()
         self.youtube_provider = YouTubeProvider()
         self.needs_provider = NeedsProvider()
+
+        # Tavily 검증용 (선택적)
+        try:
+            self.tavily_provider = TavilyProvider()
+        except ValueError:
+            self.tavily_provider = None
+            logger.warning("Tavily API 키 없음 - 검증 기능 비활성화")
 
     async def generate_briefing(self, issue_id: UUID) -> IssueContent | None:
         """이슈 브리핑 생성
@@ -73,7 +84,13 @@ class ContentGenerator:
         needs, content_directions = await self._extract_youtube_needs(issue.name)
         logger.info(f"YouTube 니즈: {len(needs)}개, 방향: {len(content_directions)}개")
 
-        # 4. LLM으로 브리핑 생성
+        # 4. Tavily 검증 (기사 5개 미만인 경우)
+        verification_result = None
+        if len(articles) < self.VERIFICATION_THRESHOLD and self.tavily_provider:
+            logger.info(f"기사 {len(articles)}개 - Tavily 검증 수행")
+            verification_result = await self._verify_with_tavily(issue.name, articles)
+
+        # 5. LLM으로 브리핑 생성
         briefing_text = await self._generate_with_llm(
             issue_name=issue.name,
             articles=articles,
@@ -86,15 +103,23 @@ class ContentGenerator:
             logger.error(f"브리핑 생성 실패: {issue.name}")
             return None
 
-        # 5. 제목 추출
+        # 6. 검증 결과 반영
+        if verification_result and verification_result.get("unverified_claims"):
+            briefing_text = self._append_verification_notice(
+                briefing_text,
+                verification_result["unverified_claims"]
+            )
+
+        # 7. 제목 추출
         title = self._extract_title(briefing_text, issue.name)
 
-        # 6. 저장
+        # 8. 저장
+        is_verified = not (verification_result and verification_result.get("unverified_claims"))
         content = IssueContent(
             issue_id=issue_id,
             title=title,
             content=briefing_text,
-            verified=True,  # 기본적으로 verified
+            verified=is_verified,
         )
         self.db.add(content)
 
@@ -286,7 +311,10 @@ class ContentGenerator:
         # 마크다운 제목 패턴
         match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
         if match:
-            return match.group(1).strip()
+            title = match.group(1).strip()
+            # "이슈명:", "이슈명 :" 등 접두사 제거
+            title = re.sub(r"^이슈명\s*:\s*", "", title)
+            return title
         return f"{fallback} 브리핑"
 
     async def generate_for_today(self) -> list[IssueContent]:
@@ -319,3 +347,166 @@ class ContentGenerator:
 
         await self.db.commit()
         return contents
+
+    # ========== Tavily 검증 ==========
+
+    async def _verify_with_tavily(
+        self,
+        issue_name: str,
+        articles: list[IssueArticle]
+    ) -> dict:
+        """Tavily로 기사 내용 검증
+
+        Args:
+            issue_name: 이슈명
+            articles: 기사 목록
+
+        Returns:
+            {
+                "verified_claims": [...],  # 검증된 내용
+                "unverified_claims": [...]  # 미검증 내용
+            }
+        """
+        try:
+            # 1. Tavily 검색
+            tavily_results = await self.tavily_provider.search(
+                query=issue_name,
+                max_results=5
+            )
+
+            if not tavily_results:
+                logger.warning(f"Tavily 검색 결과 없음: {issue_name}")
+                return {"verified_claims": [], "unverified_claims": []}
+
+            # 2. 기사에서 주요 주장 추출
+            claims = self._extract_claims_from_articles(articles)
+
+            if not claims:
+                return {"verified_claims": [], "unverified_claims": []}
+
+            # 3. Tavily 결과 텍스트 준비
+            tavily_text = "\n".join([
+                f"- {r['title']}: {r['snippet']}"
+                for r in tavily_results
+            ])
+
+            # 4. LLM으로 검증
+            verification = self._verify_claims_with_llm(claims, tavily_text)
+
+            logger.info(
+                f"검증 완료: {len(verification['verified_claims'])}개 확인, "
+                f"{len(verification['unverified_claims'])}개 미확인"
+            )
+
+            return verification
+
+        except Exception as e:
+            logger.error(f"Tavily 검증 실패: {e}")
+            return {"verified_claims": [], "unverified_claims": []}
+
+    def _extract_claims_from_articles(
+        self,
+        articles: list[IssueArticle]
+    ) -> list[str]:
+        """기사에서 주요 주장/팩트 추출"""
+        prompt = f"""다음 뉴스 기사들에서 검증이 필요한 핵심 주장/팩트를 추출해주세요.
+
+기사 목록:
+{chr(10).join([f'- {a.title}' + (f': {a.description[:200]}' if a.description else '') for a in articles[:5]])}
+
+규칙:
+1. 구체적인 수치, 날짜, 사실관계 중심으로 추출
+2. 5개 이내로 추출
+3. 각 주장은 한 문장으로
+
+JSON 형식으로 응답:
+{{"claims": ["주장1", "주장2", ...]}}
+"""
+
+        try:
+            response = self.llm.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500,
+                temperature=0.1,
+            )
+
+            import json
+            result = response.choices[0].message.content
+            # JSON 파싱
+            if "```json" in result:
+                result = result.split("```json")[1].split("```")[0]
+            elif "```" in result:
+                result = result.split("```")[1].split("```")[0]
+
+            data = json.loads(result.strip())
+            return data.get("claims", [])
+
+        except Exception as e:
+            logger.error(f"주장 추출 실패: {e}")
+            return []
+
+    def _verify_claims_with_llm(
+        self,
+        claims: list[str],
+        tavily_text: str
+    ) -> dict:
+        """LLM으로 주장 검증"""
+        prompt = f"""다음 주장들을 웹 검색 결과와 비교해서 검증해주세요.
+
+## 검증할 주장
+{chr(10).join([f'{i+1}. {c}' for i, c in enumerate(claims)])}
+
+## 웹 검색 결과
+{tavily_text}
+
+## 검증 규칙
+- 검색 결과에서 확인 가능한 내용 → verified
+- 검색 결과에서 확인 불가 또는 다른 내용 → unverified
+
+JSON 형식으로 응답:
+{{
+  "verified_claims": ["확인된 주장1", ...],
+  "unverified_claims": ["미확인 주장1", ...]
+}}
+"""
+
+        try:
+            response = self.llm.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500,
+                temperature=0.1,
+            )
+
+            import json
+            result = response.choices[0].message.content
+            # JSON 파싱
+            if "```json" in result:
+                result = result.split("```json")[1].split("```")[0]
+            elif "```" in result:
+                result = result.split("```")[1].split("```")[0]
+
+            data = json.loads(result.strip())
+            return {
+                "verified_claims": data.get("verified_claims", []),
+                "unverified_claims": data.get("unverified_claims", [])
+            }
+
+        except Exception as e:
+            logger.error(f"LLM 검증 실패: {e}")
+            return {"verified_claims": [], "unverified_claims": []}
+
+    def _append_verification_notice(
+        self,
+        content: str,
+        unverified_claims: list[str]
+    ) -> str:
+        """콘텐츠에 미검증 안내 추가"""
+        notice = "\n\n---\n\n## ⚠️ 미검증 내용\n\n"
+        notice += "다음 내용은 추가 확인이 필요합니다:\n\n"
+        for claim in unverified_claims:
+            notice += f"- {claim}\n"
+        notice += "\n*본 내용은 단일 출처에 기반하여 교차 검증이 완료되지 않았습니다.*"
+
+        return content + notice

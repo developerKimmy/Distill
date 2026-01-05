@@ -72,7 +72,7 @@ function ArticleResultCard({ article }: { article: ArticleSearchResult }) {
       <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
         {article.press && <span>{article.press}</span>}
         {article.publishedAt && <span>· {formatFullDate(article.publishedAt)}</span>}
-        {article.issueName && (
+        {article.issueName && article.issueId && (
           <Link
             to={`/issues/${article.issueId}`}
             onClick={(e) => e.stopPropagation()}
@@ -92,8 +92,8 @@ function ContentResultCard({ content }: { content: ContentSearchResult }) {
 
   return (
     <div
-      onClick={() => navigate(`/issues/${content.issueId}`)}
-      className="p-3 bg-amber-50 border border-amber-200 rounded-lg hover:shadow-sm transition-all cursor-pointer"
+      onClick={() => content.issueId && navigate(`/issues/${content.issueId}`)}
+      className={`p-3 bg-amber-50 border border-amber-200 rounded-lg hover:shadow-sm transition-all ${content.issueId ? 'cursor-pointer' : ''}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-medium text-amber-700">
@@ -114,7 +114,15 @@ function ContentResultCard({ content }: { content: ContentSearchResult }) {
         <p className="text-xs text-gray-600 line-clamp-3">{content.contentPreview}</p>
       )}
       <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
-        {content.issueName && <span>{content.issueName}</span>}
+        {content.issueName && content.issueId && (
+          <Link
+            to={`/issues/${content.issueId}`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-amber-600 hover:underline"
+          >
+            {content.issueName} →
+          </Link>
+        )}
         {content.createdAt && <span>· {formatFullDate(content.createdAt)}</span>}
       </div>
     </div>

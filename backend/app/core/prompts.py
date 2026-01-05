@@ -157,9 +157,9 @@ def content_generation_prompt(
 ## 보고서 형식 (반드시 준수)
 
 ```
-# 이슈명
+# {issue_name}
 
-**작성일**: YYYY년 MM월 DD일
+**작성일**: {today_str}
 
 ---
 
