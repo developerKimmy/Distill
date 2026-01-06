@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { getIssues } from '../api/issues';
 import { LoadingFallback, LoadingOverlay, CategoryBadge } from '../components/common';
 import { useFollowMutation } from '../hooks';
@@ -50,9 +52,14 @@ function IssueRow({
         )}
       </div>
 
-      {/* 기사 수 */}
-      <div className="text-xs text-gray-500 whitespace-nowrap">
-        {issue.articleCount || 0}개 기사
+      {/* 날짜 + 기사 수 */}
+      <div className="text-xs text-gray-400 whitespace-nowrap text-right">
+        {issue.firstSeenAt && (
+          <div className="text-gray-500">
+            {format(parseISO(issue.firstSeenAt), 'M/d', { locale: ko })}
+          </div>
+        )}
+        <div>{issue.articleCount || 0}개</div>
       </div>
 
       {/* 팔로우 버튼 */}
