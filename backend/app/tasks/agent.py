@@ -40,36 +40,35 @@ def run_agent_cycle(self):
     logger.info("=== Agent Task Started ===")
 
     async def _run():
-        from app.agent.main import MonitoringAgent
+        from app.monitoring.pipeline import run_monitoring
 
         # Celery에서 asyncio.run()으로 호출되므로 매번 새 엔진 생성 필요
         AsyncSession = create_async_session_factory()
 
         async with AsyncSession() as db:
-            try:
-                agent = MonitoringAgent()
-                result = await agent.run_cycle(db)
+            state = await run_monitoring(db)
 
-                return {
-                    "status": result.status,
-                    "articles_collected": result.articles_collected,
-                    "issues_processed": result.issues_processed,
-                    "events_detected": result.events_detected,
-                    "notifications_sent": result.notifications_sent,
-                    "error": result.error_message,
-                }
-            except Exception as e:
-                logger.error(f"Agent task failed: {e}")
-                _send_error_alert(
-                    error_type="Agent Task Error",
-                    error_message=str(e),
-                    traceback_str=traceback.format_exc()
-                )
-                return {
-                    "status": "failed",
-                    "error": str(e),
-                }
+            return {
+                "status": "completed" if not state.get("errors") else "failed",
+                "articles_collected": len(state.get("collected_articles", [])),
+                "issues_processed": len(state.get("matched_results", [])),
+                "events_detected": len(state.get("detected_events", [])),
+                "notifications_sent": 0,  # TODO: 알림 개수 추적
+                "error": ", ".join(state.get("errors", [])) if state.get("errors") else None,
+            }
 
-    result = asyncio.run(_run())
-    logger.info(f"=== Agent Task Completed: {result} ===")
-    return result
+    try:
+        result = asyncio.run(_run())
+        logger.info(f"=== Agent Task Completed: {result} ===")
+        return result
+    except Exception as e:
+        logger.error(f"Agent task failed: {e}")
+        _send_error_alert(
+            error_type="Agent Task Error",
+            error_message=str(e),
+            traceback_str=traceback.format_exc()
+        )
+        return {
+            "status": "failed",
+            "error": str(e),
+        }
