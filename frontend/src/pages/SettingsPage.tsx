@@ -43,6 +43,8 @@ export default function SettingsPage() {
       updateNotificationSettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notificationSettings'] });
+      // 카테고리 변경 시 다이제스트 캐시도 무효화
+      queryClient.invalidateQueries({ queryKey: ['daily-digest'] });
     },
   });
 

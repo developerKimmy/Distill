@@ -155,18 +155,6 @@ def send_morning_digest(self):
                 print(f"[DIGEST] No articles and no digest for {yesterday}")
                 return {"status": "skipped", "reason": "no_data"}
 
-            # 통계 및 issue_map 생성
-            total_articles = 0
-            new_issues_count = 0
-            issue_map = {}  # 이슈 이름 -> ID 매핑
-
-            for issue, article_count in results:
-                is_new = issue.first_seen_at == yesterday_date
-                if is_new:
-                    new_issues_count += 1
-                total_articles += article_count
-                issue_map[issue.name] = str(issue.id)
-
             # 이메일 발송
             email_service = None
             if settings.GMAIL_USER and settings.GMAIL_APP_PASSWORD:
@@ -179,16 +167,77 @@ def send_morning_digest(self):
                 print("[DIGEST] Email service not configured")
                 return {"status": "skipped", "reason": "no_email_config"}
 
+            def filter_digest_by_categories(markdown: str, allowed_categories: list[str]) -> str:
+                """마크다운에서 특정 카테고리 섹션만 필터링
+
+                - 오늘의 핵심, 기타 비카테고리 섹션은 항상 포함
+                - 카테고리 섹션(정치, 경제 등)만 필터링
+                """
+                if not allowed_categories:
+                    return markdown
+
+                import re
+                # 실제 카테고리 목록 (이 섹션들만 필터링 대상)
+                all_categories = {"정치", "경제", "사회", "세계", "IT/과학", "연예", "스포츠", "기타"}
+
+                lines = markdown.split('\n')
+                result = []
+                in_allowed_section = True
+
+                for line in lines:
+                    h2_match = re.match(r'^## (.+)$', line)
+                    if h2_match:
+                        section = h2_match.group(1).strip()
+                        # 카테고리 섹션인 경우만 필터링 적용
+                        if section in all_categories:
+                            in_allowed_section = section in allowed_categories
+                        else:
+                            # 비카테고리 섹션(오늘의 핵심 등)은 항상 포함
+                            in_allowed_section = True
+                    if in_allowed_section:
+                        result.append(line)
+                return '\n'.join(result)
+
             sent_count = 0
             for user in users:
                 try:
+                    # 사용자별 카테고리 필터 가져오기
+                    user_categories = None
+                    if user.settings and user.settings.category_filter:
+                        user_categories = [c.strip() for c in user.settings.category_filter.split(",") if c.strip()]
+
+                    # 카테고리 필터에 맞게 이슈 필터링
+                    if user_categories:
+                        filtered_results = [
+                            (issue, count) for issue, count in results
+                            if (issue.category or "기타") in user_categories
+                        ]
+                    else:
+                        filtered_results = results
+
+                    # 필터링된 통계 계산
+                    total_articles = 0
+                    new_issues_count = 0
+                    issue_map = {}
+                    for issue, article_count in filtered_results:
+                        is_new = issue.first_seen_at == yesterday_date
+                        if is_new:
+                            new_issues_count += 1
+                        total_articles += article_count
+                        issue_map[issue.name] = str(issue.id)
+
+                    # digest_summary도 필터링
+                    filtered_summary = digest_summary
+                    if digest_summary and user_categories:
+                        filtered_summary = filter_digest_by_categories(digest_summary, user_categories)
+
                     success = email_service.send_daily_digest(
                         recipient=user.email,
                         digest_date=yesterday,
-                        total_issues=len(results),
+                        total_issues=len(filtered_results),
                         new_issues_count=new_issues_count,
                         total_articles=total_articles,
-                        digest_summary=digest_summary,
+                        digest_summary=filtered_summary,
                         issue_map=issue_map
                     )
                     if success:

@@ -421,8 +421,8 @@ class MatchNode:
         else:
             issue_name = article["title"][:50]
 
-        # 카테고리 추론
-        category = self._infer_category(what_type)
+        # 카테고리 추론 (이슈명 기반 키워드 오버라이드 포함)
+        category = self._infer_category(what_type, issue_name)
 
         # 이슈 이름 임베딩 생성
         name_embedding = self.embedding_provider.embed(issue_name)
@@ -455,8 +455,36 @@ class MatchNode:
 
         return issue, new_issue_info
 
-    def _infer_category(self, what_type: str | None) -> str:
-        """what_type에서 카테고리 추론"""
+    def _infer_category(self, what_type: str | None, issue_name: str = "") -> str:
+        """what_type과 이슈명에서 카테고리 추론
+
+        우선순위:
+        1. 이슈명에서 정치 키워드 감지 → 정치
+        2. what_type 매핑
+        3. 기본값 → 사회
+        """
+        # 정치 키워드 (당명, 직책, 기관 등)
+        political_keywords = [
+            # 정당
+            "국민의힘", "민주당", "더불어민주당", "조국혁신당", "개혁신당",
+            "새로운미래", "진보당", "녹색정의당",
+            # 직책
+            "대통령", "총리", "장관", "의원", "국회", "대표", "원내대표",
+            "정책위의장", "비서실장", "수석", "비대위",
+            # 기관
+            "청와대", "대통령실", "여당", "야당", "여야",
+            # 정치 활동
+            "탄핵", "해임", "임명", "인사청문", "사퇴", "출마", "공천",
+            "당대회", "전당대회", "윤리위",
+        ]
+
+        # 이슈명에서 정치 키워드 검색
+        if issue_name:
+            for keyword in political_keywords:
+                if keyword in issue_name:
+                    return "정치"
+
+        # what_type 기반 매핑
         category_map = {
             "TRIAL": "정치",
             "INVESTIGATION": "사회",

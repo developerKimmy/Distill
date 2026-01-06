@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getDailyDigest } from '../api/issues';
 import { LoadingFallback, LoadingOverlay } from '../components/common';
+import { isLoggedIn } from '../utils/categories';
 
 // 이슈 이름을 링크로 변환하는 텍스트 처리 함수
 function processTextWithIssueLinks(
@@ -41,6 +42,34 @@ function processChildren(children: ReactNode, issueMap: Record<string, string>):
   return typeof children === 'string' ? processTextWithIssueLinks(children, issueMap) : children;
 }
 
+// digestSummary에서 특정 카테고리 섹션만 필터링
+function filterDigestByCategories(markdown: string, allowedCategories: string[]): string {
+  if (allowedCategories.length === 0) return markdown;
+
+  const lines = markdown.split('\n');
+  const result: string[] = [];
+  let currentSection: string | null = null;
+  let inAllowedSection = true; // 헤더 영역은 항상 포함
+  let headerEnded = false;
+
+  for (const line of lines) {
+    // ## 카테고리 형식 감지
+    const h2Match = line.match(/^## (.+)$/);
+    if (h2Match) {
+      headerEnded = true;
+      currentSection = h2Match[1].trim();
+      inAllowedSection = allowedCategories.includes(currentSection);
+    }
+
+    // 헤더 영역(첫 ## 전까지) 또는 허용된 섹션이면 포함
+    if (!headerEnded || inAllowedSection) {
+      result.push(line);
+    }
+  }
+
+  return result.join('\n');
+}
+
 export default function DailyDigestPage() {
   const { date } = useParams<{ date: string }>();
 
@@ -54,10 +83,17 @@ export default function DailyDigestPage() {
   }, [date]);
 
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['daily-digest', date],
+    queryKey: ['daily-digest', date, isLoggedIn()],
     queryFn: () => getDailyDigest(date!),
     enabled: !!date,
   });
+
+  // 사용자 카테고리에 맞게 digestSummary 필터링
+  const filteredDigestSummary = useMemo(() => {
+    if (!data?.digestSummary || !data?.categories) return data?.digestSummary;
+    const allowedCategories = data.categories.map(c => c.category);
+    return filterDigestByCategories(data.digestSummary, allowedCategories);
+  }, [data?.digestSummary, data?.categories]);
 
   return (
     <LoadingFallback
@@ -100,7 +136,7 @@ export default function DailyDigestPage() {
           </div>
 
           {/* 다이제스트 요약 */}
-          {data.digestSummary && (
+          {filteredDigestSummary && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
               <div className="prose prose-sm max-w-none
                 prose-headings:text-gray-900 prose-h1:text-lg prose-h1:font-bold prose-h1:mt-4 prose-h1:mb-2
@@ -122,14 +158,14 @@ export default function DailyDigestPage() {
                     strong: ({ children }) => <strong>{processChildren(children, data.issueMap!)}</strong>,
                   } : undefined}
                 >
-                  {data.digestSummary}
+                  {filteredDigestSummary}
                 </ReactMarkdown>
               </div>
             </div>
           )}
 
           {/* 빈 상태 */}
-          {!data.digestSummary && (
+          {!filteredDigestSummary && (
             <div className="text-center py-12">
               <p className="text-gray-500">이 날짜에는 브리핑이 없습니다.</p>
             </div>

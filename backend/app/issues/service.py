@@ -297,8 +297,12 @@ class IssueService:
 
     # ========== 데일리 다이제스트 ==========
 
-    async def get_daily_digest(self, digest_date: date) -> dict:
+    async def get_daily_digest(self, digest_date: date, category_filter: list[str] | None = None) -> dict:
         """데일리 다이제스트 데이터 조회
+
+        Args:
+            digest_date: 조회할 날짜
+            category_filter: 사용자가 선택한 카테고리 목록 (None이면 전체)
 
         Returns:
             카테고리별로 그룹핑된 이슈 목록 + 통계
@@ -324,6 +328,13 @@ class IssueService:
         )
         result = await self.db.execute(stmt)
         issues = list(result.scalars().all())
+
+        # 카테고리 필터 적용
+        if category_filter:
+            issues = [
+                issue for issue in issues
+                if (issue.category or "기타") in category_filter
+            ]
 
         # 카테고리별 그룹핑
         by_category: dict[str, list] = defaultdict(list)

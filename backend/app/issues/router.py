@@ -1,10 +1,12 @@
 from uuid import UUID
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.issues.service import IssueService
+from app.settings.models import UserSettings
 from app.issues.schemas import (
     IssueListResponse,
     IssueListItem,
@@ -309,10 +311,20 @@ async def get_daily_report(
 async def get_daily_digest(
         digest_date: date,
         db: AsyncSession = Depends(get_async_session),
+        user: User | None = Depends(optional_current_user),
 ):
-    """데일리 다이제스트 조회 - 비로그인 허용"""
+    """데일리 다이제스트 조회 - 비로그인 허용, 로그인 시 카테고리 필터 적용"""
+    # 로그인한 사용자의 카테고리 필터 가져오기
+    category_filter = None
+    if user:
+        settings_stmt = select(UserSettings).where(UserSettings.user_id == user.id)
+        settings_result = await db.execute(settings_stmt)
+        user_settings = settings_result.scalar_one_or_none()
+        if user_settings and user_settings.category_filter:
+            category_filter = [c.strip() for c in user_settings.category_filter.split(",") if c.strip()]
+
     service = IssueService(db)
-    data = await service.get_daily_digest(digest_date)
+    data = await service.get_daily_digest(digest_date, category_filter=category_filter)
 
     return DailyDigestResponse(
         date=data["date"],
