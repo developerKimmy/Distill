@@ -10,6 +10,8 @@ KST = timezone(timedelta(hours=9))
 from app.monitoring.state import MonitoringState, ArticleData
 from app.monitoring.collectors import GoogleNewsProvider, NaverNewsProvider, NewsItem
 from app.core.agent.tools import EmbeddingProvider
+# 모든 모델 올바른 순서로 로드
+import app.core.models  # noqa: F401
 from app.issues.models import Issue, IssueArticle, IssueEmbedding
 from app.core.config import settings
 

@@ -101,6 +101,12 @@ class Settings(BaseSettings):
     # 에러 알림
     ADMIN_EMAIL: str = ""  # 에러 발생 시 알림 받을 이메일
 
+    # ===== Agent 설정 =====
+    AGENT_ENABLED: bool = True  # Agent 기능 활성화
+    AGENT_MAX_ITERATIONS: int = 5  # 최대 반복 횟수
+    AGENT_MIN_ARTICLES: int = 5  # 이 미만이면 Agent 실행
+    AGENT_CONFIDENCE_THRESHOLD: float = 0.65  # 이 이상이면 충분
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

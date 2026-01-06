@@ -126,24 +126,31 @@ def send_morning_digest(self):
                 print("[DIGEST] No users with email notifications enabled")
                 return {"status": "skipped", "reason": "no_users"}
 
-            # 어제의 다이제스트 데이터 조회 (async → sync로 변환)
-            # IssueService는 async이므로 직접 쿼리 실행
-            from app.issues.models import Issue, IssueDailySnapshot
+            # 어제 수집된 기사를 이슈별로 그룹핑하여 조회
+            from app.issues.models import Issue, IssueArticle, UNASSIGNED_ISSUE_ID
+            from sqlalchemy import func
             from collections import defaultdict
 
             yesterday_date = today_kst - timedelta(days=1)
 
+            # 어제 수집된 기사를 이슈별로 카운트 (UNASSIGNED 제외)
             stmt = (
-                select(IssueDailySnapshot)
-                .join(Issue)
-                .options(selectinload(IssueDailySnapshot.issue))
-                .where(IssueDailySnapshot.date == yesterday_date)
-                .order_by(IssueDailySnapshot.article_count.desc())
+                select(
+                    Issue,
+                    func.count(IssueArticle.id).label('article_count')
+                )
+                .join(IssueArticle, Issue.id == IssueArticle.issue_id)
+                .where(
+                    func.date(IssueArticle.collected_at) == yesterday_date,
+                    Issue.id != UNASSIGNED_ISSUE_ID
+                )
+                .group_by(Issue.id)
+                .order_by(func.count(IssueArticle.id).desc())
             )
-            snapshots = list(db.execute(stmt).scalars().all())
+            results = list(db.execute(stmt).all())
 
-            if not snapshots:
-                print(f"[DIGEST] No snapshots for {yesterday}")
+            if not results:
+                print(f"[DIGEST] No articles for {yesterday}")
                 return {"status": "skipped", "reason": "no_data"}
 
             # 카테고리별 그룹핑
@@ -151,8 +158,7 @@ def send_morning_digest(self):
             total_articles = 0
             new_issues_count = 0
 
-            for snapshot in snapshots:
-                issue = snapshot.issue
+            for issue, article_count in results:
                 category = issue.category or "기타"
                 is_new = issue.first_seen_at == yesterday_date
 
@@ -162,10 +168,10 @@ def send_morning_digest(self):
                 by_category[category].append({
                     "id": str(issue.id),
                     "name": issue.name,
-                    "article_count": snapshot.article_count,
+                    "article_count": article_count,
                     "is_new": is_new,
                 })
-                total_articles += snapshot.article_count
+                total_articles += article_count
 
             # 카테고리 데이터 구조화
             category_order = ["정치", "경제", "사회", "세계", "IT/과학", "연예", "스포츠", "기타"]
@@ -196,7 +202,7 @@ def send_morning_digest(self):
                     success = email_service.send_daily_digest(
                         recipient=user.email,
                         digest_date=yesterday,
-                        total_issues=len(snapshots),
+                        total_issues=len(results),
                         new_issues_count=new_issues_count,
                         total_articles=total_articles,
                         categories=categories

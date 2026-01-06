@@ -63,6 +63,9 @@ class MonitoringState(TypedDict):
     matched_results: list[MatchResult]
     new_issues_created: list[dict]  # 새로 생성된 이슈 정보
 
+    # === Agent 단계 ===
+    agent_results: list[dict]  # IssueAgentState 결과들
+
     # === Enrich 단계 ===
     enriched_issues: list[str]  # 콘텐츠 생성된 issue_id 목록
 

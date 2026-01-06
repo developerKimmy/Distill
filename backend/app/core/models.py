@@ -13,7 +13,10 @@ from app.auth.models import User  # noqa: F401
 # 3. User 설정
 from app.settings.models import UserSettings  # noqa: F401
 
-# 4. 이슈 관련 모델
+# 4. Batch 모델 (IssueDailySnapshot이 참조)
+from app.batch.models import BatchRun  # noqa: F401
+
+# 5. 이슈 관련 모델
 from app.issues.models import (  # noqa: F401
     Entity,
     Issue,
@@ -25,7 +28,8 @@ from app.issues.models import (  # noqa: F401
     IssueInsight,
     IssueFollow,
     DailyDigest,
+    IssueDailySnapshot,
 )
 
-# 5. 알림 모델
+# 6. 알림 모델
 from app.notifications.models import Notification, AgentRun  # noqa: F401

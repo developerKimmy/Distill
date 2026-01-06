@@ -13,7 +13,9 @@ from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.monitoring.state import MonitoringState, EventData
-from app.issues.models import Issue, IssueArticle
+# 모든 모델 올바른 순서로 로드
+import app.core.models  # noqa: F401
+from app.issues.models import Issue, IssueArticle, IssueFollow
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -205,7 +207,6 @@ class DetectNode:
         events = []
 
         # 팔로우된 이슈 ID 조회 (IssueFollow 테이블 통해)
-        from app.issues.models import IssueFollow
         followed_query = (
             select(Issue.id, Issue.name)
             .join(IssueFollow, Issue.id == IssueFollow.issue_id)

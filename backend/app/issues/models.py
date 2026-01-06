@@ -55,6 +55,7 @@ class Issue(Base, UUIDMixin, TimestampMixin):
     insights = relationship("IssueInsight", back_populates="issue", cascade="all, delete-orphan")
     issue_entities = relationship("IssueEntity", back_populates="issue", cascade="all, delete-orphan")
     followers = relationship("IssueFollow", back_populates="issue", cascade="all, delete-orphan")
+    daily_snapshots = relationship("IssueDailySnapshot", back_populates="issue", cascade="all, delete-orphan")
 
 
 class IssueEntity(Base, UUIDMixin):
@@ -242,6 +243,38 @@ class IssueFollow(Base, UUIDMixin):
     # Relationships
     user = relationship("User", back_populates="followed_issues")
     issue = relationship("Issue", back_populates="followers")
+
+
+class IssueDailySnapshot(Base, UUIDMixin):
+    """이슈 일별 스냅샷"""
+    __tablename__ = "issue_daily_snapshots"
+    __table_args__ = (
+        UniqueConstraint('issue_id', 'date', name='uq_issue_daily_snapshots'),
+    )
+
+    issue_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    batch_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("batch_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    article_count: Mapped[int] = mapped_column(Integer, server_default='0')
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    # Relationships
+    issue = relationship("Issue", back_populates="daily_snapshots")
+    batch_run = relationship("BatchRun", back_populates="issue_snapshots")
 
 
 class DailyDigest(Base, UUIDMixin):

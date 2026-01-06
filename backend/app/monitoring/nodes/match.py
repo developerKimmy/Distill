@@ -16,6 +16,8 @@ from app.monitoring.state import (
 )
 from app.core.agent.tools import EmbeddingProvider
 from app.monitoring.collectors import NaverNewsProvider
+# 모든 모델 올바른 순서로 로드
+import app.core.models  # noqa: F401
 from app.issues.models import (
     Issue, IssueArticle, IssueEmbedding, Entity, IssueEntity,
     UNASSIGNED_ISSUE_ID
@@ -550,8 +552,21 @@ class MatchNode:
         ner_data: NERData | None,
         issue_id: UUID,
         db: AsyncSession
-    ):
-        """기사 저장"""
+    ) -> bool:
+        """기사 저장 (중복 URL 체크 포함)
+
+        Returns:
+            True if saved, False if duplicate
+        """
+        # URL 정규화 및 중복 체크
+        normalized_url = article["url"].split("?")[0].rstrip("/")
+        existing = await db.execute(
+            select(IssueArticle.id).where(IssueArticle.url == normalized_url).limit(1)
+        )
+        if existing.scalar_one_or_none():
+            logger.debug(f"중복 URL 스킵: {normalized_url[:50]}...")
+            return False
+
         now = datetime.now(KST)
 
         # NER 결과를 entities JSON으로 변환
@@ -567,7 +582,7 @@ class MatchNode:
         issue_article = IssueArticle(
             issue_id=issue_id,
             title=article["title"],
-            url=article["url"],
+            url=normalized_url,
             description=article.get("description"),
             press=article.get("press"),
             source=article.get("source"),
@@ -588,6 +603,8 @@ class MatchNode:
                 embedding=article["embedding"],
             )
             db.add(embedding)
+
+        return True
 
     async def _update_issue_dates(self, issue_id: UUID, db: AsyncSession):
         """이슈의 last_seen_at 업데이트"""
@@ -795,15 +812,15 @@ class MatchNode:
             added_count = 0
 
             for news_item in results:
-                url = news_item.url.split("?")[0].rstrip("/")
-                if url in existing_urls:
+                normalized_url = news_item.url.split("?")[0].rstrip("/")
+                if normalized_url in existing_urls:
                     continue
 
-                # 기사 저장
+                # 기사 저장 (정규화된 URL 사용)
                 article = IssueArticle(
                     issue_id=issue.id,
                     title=news_item.title,
-                    url=news_item.url,
+                    url=normalized_url,
                     description=news_item.description,
                     press=news_item.press or None,
                     source="naver",
@@ -815,7 +832,7 @@ class MatchNode:
                 )
                 db.add(article)
                 added_count += 1
-                existing_urls.add(url)  # 같은 배치 내 중복 방지
+                existing_urls.add(normalized_url)  # 같은 배치 내 중복 방지
 
             if added_count > 0:
                 await db.flush()

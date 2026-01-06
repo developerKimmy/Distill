@@ -17,6 +17,8 @@ from openai import OpenAI
 from app.monitoring.state import MonitoringState, MatchResult
 from app.core.config import settings
 from app.core.prompts import content_generation_prompt, daily_digest_prompt
+# 모든 모델 올바른 순서로 로드
+import app.core.models  # noqa: F401
 from app.issues.models import Issue, IssueArticle, IssueContent
 
 logger = logging.getLogger(__name__)
@@ -43,13 +45,20 @@ class EnrichNode:
         """Enrich 노드 실행
 
         1. 매칭된 이슈별로 기사 그룹화
-        2. 각 이슈에 대해 콘텐츠 생성
-        3. 2차 검증 (Entity 일관성)
+        2. Agent 결과 병합 (supplementary_data)
+        3. 각 이슈에 대해 콘텐츠 생성
+        4. 2차 검증 (Entity 일관성)
         """
         matched_results = state.get("matched_results", [])
         articles = state.get("collected_articles", [])
         entities = state.get("extracted_entities", [])
+        agent_results = state.get("agent_results", [])
         errors = list(state.get("errors", []))
+
+        # Agent 결과를 issue_id로 인덱싱
+        agent_data_by_issue = {
+            r["issue_id"]: r for r in agent_results if r.get("issue_id")
+        }
 
         if not matched_results:
             logger.info("콘텐츠 생성할 매칭 결과 없음")
@@ -71,11 +80,16 @@ class EnrichNode:
 
         for i, (issue_id, data) in enumerate(issue_articles.items()):
             try:
+                # Agent가 수집한 추가 정보 가져오기
+                agent_data = agent_data_by_issue.get(issue_id, {})
+                supplementary = agent_data.get("supplementary_data", [])
+
                 content = await self._generate_issue_content(
                     issue_id=issue_id,
                     issue_name=data["issue_name"],
                     articles=data["articles"],
                     ner_list=data["ner_list"],
+                    supplementary_data=supplementary,
                     db=db
                 )
 
@@ -162,9 +176,14 @@ class EnrichNode:
         issue_name: str,
         articles: list[dict],
         ner_list: list[dict],
+        supplementary_data: list[dict],
         db: AsyncSession
     ) -> IssueContent | None:
-        """이슈 콘텐츠 생성"""
+        """이슈 콘텐츠 생성
+
+        Args:
+            supplementary_data: Agent가 수집한 추가 정보 (Tavily 등)
+        """
 
         if not articles:
             return None
@@ -184,6 +203,15 @@ class EnrichNode:
             f"제목: {a['title']}\n내용: {a.get('description', '없음')}"
             for a in articles[:10]
         ])
+
+        # Agent 수집 정보 추가 (Tavily 등)
+        if supplementary_data:
+            supp_text = "\n\n".join([
+                f"[{s.get('source', 'web')}] {s.get('title', '')}: {s.get('content', '')[:200]}"
+                for s in supplementary_data[:5]
+            ])
+            articles_text += f"\n\n=== 추가 수집 정보 ===\n{supp_text}"
+            logger.info(f"[Enrich] {issue_name}: Agent 수집 정보 {len(supplementary_data)}개 활용")
 
         # NER에서 키워드 추출
         keywords = self._extract_keywords_from_ner(ner_list)
@@ -206,7 +234,6 @@ class EnrichNode:
             response = self.llm.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=2000,
                 temperature=0.3,
             )
 
