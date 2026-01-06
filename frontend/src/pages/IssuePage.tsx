@@ -76,15 +76,6 @@ function ArticleList({ articles }: { articles: IssueArticle[] }) {
 function ContentCard({ content }: { content: IssueContent }) {
   return (
     <div className="p-3 sm:p-4 bg-amber-50 border border-amber-200 rounded-lg">
-      <div className="flex items-center gap-2 mb-2">
-        <h4 className="font-semibold text-gray-900 text-sm sm:text-base">
-          {content.title || '콘텐츠'}
-        </h4>
-        <span className="text-[10px] sm:text-xs text-gray-500">
-          {formatFullDate(content.createdAt)}
-        </span>
-      </div>
-
       {content.content && (
         <div className="prose prose-sm prose-gray max-w-none overflow-x-auto">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown>

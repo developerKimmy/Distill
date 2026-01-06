@@ -129,7 +129,10 @@ class EnrichNode:
         except Exception:
             pass
 
-        logger.info(f"=== 콘텐츠 생성 완료: {len(enriched_issues)}개 이슈 ===")
+        # === 추가: content 없는 기존 이슈 처리 ===
+        backfill_count = await self._backfill_missing_contents(db, enriched_issues, errors)
+
+        logger.info(f"=== 콘텐츠 생성 완료: {len(enriched_issues)}개 이슈 (backfill: {backfill_count}개) ===")
 
         return {
             "enriched_issues": enriched_issues,
@@ -380,6 +383,107 @@ class EnrichNode:
             return False
 
         return True
+
+    async def _backfill_missing_contents(
+        self,
+        db: AsyncSession,
+        already_enriched: list[str],
+        errors: list[str]
+    ) -> int:
+        """content 없는 기존 이슈에 대해 콘텐츠 생성
+
+        Args:
+            db: DB 세션
+            already_enriched: 이번 사이클에서 이미 처리된 이슈 ID 목록
+            errors: 에러 목록
+
+        Returns:
+            생성된 콘텐츠 수
+        """
+        from sqlalchemy.orm import selectinload
+        from app.issues.models import UNASSIGNED_ISSUE_ID
+
+        # content 없는 active 이슈 조회 (UNASSIGNED 제외, 기사 있는 것만)
+        # 이번 사이클에서 이미 처리된 것 제외
+        already_enriched_uuids = [UUID(x) for x in already_enriched if x]
+
+        stmt = (
+            select(Issue)
+            .outerjoin(IssueContent)
+            .options(selectinload(Issue.articles))
+            .where(
+                Issue.status == "active",
+                Issue.id != UNASSIGNED_ISSUE_ID,
+                IssueContent.id == None,  # content 없는 것
+            )
+            .limit(20)  # 한 번에 최대 20개만
+        )
+
+        if already_enriched_uuids:
+            stmt = stmt.where(Issue.id.notin_(already_enriched_uuids))
+
+        result = await db.execute(stmt)
+        issues_without_content = result.scalars().unique().all()
+
+        if not issues_without_content:
+            return 0
+
+        logger.info(f"[Backfill] content 없는 이슈 {len(issues_without_content)}개 처리")
+
+        count = 0
+        for issue in issues_without_content:
+            # 기사가 없으면 스킵
+            if not issue.articles:
+                continue
+
+            try:
+                # 기사를 dict로 변환
+                articles_data = [
+                    {
+                        "title": a.title,
+                        "description": a.description,
+                        "url": a.url,
+                        "press": a.press,
+                    }
+                    for a in sorted(issue.articles, key=lambda x: x.collected_at, reverse=True)[:10]
+                ]
+
+                content = await self._generate_issue_content(
+                    issue_id=str(issue.id),
+                    issue_name=issue.name,
+                    articles=articles_data,
+                    ner_list=[],  # backfill은 NER 없이
+                    supplementary_data=[],
+                    db=db
+                )
+
+                if content:
+                    content.verified = True  # backfill은 검증 스킵
+                    count += 1
+                    logger.info(f"[Backfill] 콘텐츠 생성: {issue.name}")
+
+                # 매 5개마다 커밋
+                if count % 5 == 0:
+                    try:
+                        await db.commit()
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                logger.error(f"[Backfill] 실패 [{issue.name}]: {e}")
+                errors.append(f"Backfill [{issue.name}]: {str(e)}")
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                continue
+
+        try:
+            await db.commit()
+        except Exception:
+            pass
+
+        return count
 
 
 # 싱글톤 인스턴스
