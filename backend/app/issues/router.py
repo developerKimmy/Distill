@@ -59,6 +59,7 @@ async def list_issues_for_calendar(
             first_seen_at=issue["first_seen_at"],
             last_seen_at=issue["last_seen_at"],
             display_date=issue["display_date"],
+            article_count=issue["article_count"],
         )
         for issue in issues
     ]
@@ -320,6 +321,7 @@ async def get_daily_digest(
         new_issues_count=data["new_issues_count"],
         updated_at=data["updated_at"],
         digest_summary=data.get("digest_summary"),
+        issue_map=data.get("issue_map"),
         categories=[
             DigestCategoryGroup(
                 category=cat["category"],

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getIssue } from '../api/issues';
-import { LoadingFallback, FollowButton, CategoryBadge } from '../components/common';
+import { LoadingFallback, LoadingOverlay, FollowButton, CategoryBadge } from '../components/common';
 import { useFollowMutation } from '../hooks';
 import { formatShortDate, formatFullDate } from '../utils/dateFormat';
 import type { IssueArticle, IssueContent } from '../types';
@@ -90,7 +90,7 @@ export default function IssuePage() {
 
   const queryKey = useMemo(() => ['issue', issueId], [issueId]);
 
-  const { data: issue, isLoading, error } = useQuery({
+  const { data: issue, isLoading, isFetching, error } = useQuery({
     queryKey,
     queryFn: () => getIssue(issueId!),
     enabled: !!issueId,
@@ -141,6 +141,7 @@ export default function IssuePage() {
       error={error as Error | null}
       errorMessage="이슈를 불러올 수 없습니다."
     >
+      <LoadingOverlay isLoading={isFetching && !isLoading} />
       {issue && (
         <div className="space-y-6">
           {/* 헤더 */}

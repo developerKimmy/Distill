@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { searchAll, getSuggestions } from '../api/search';
-import { CategoryBadge } from '../components/common';
+import { CategoryBadge, LoadingOverlay } from '../components/common';
 import { formatFullDate } from '../utils/dateFormat';
 import type { IssueSearchResult, ArticleSearchResult, ContentSearchResult } from '../types';
 
@@ -138,7 +138,7 @@ export default function SearchPage() {
   const debouncedQuery = useDebounce(query, 300);
 
   // 검색 쿼리
-  const { data: searchResults, isLoading, error } = useQuery({
+  const { data: searchResults, isLoading, isFetching, error } = useQuery({
     queryKey: ['search', debouncedQuery],
     queryFn: () => searchAll(debouncedQuery, 30),
     enabled: debouncedQuery.length >= 2,
@@ -178,6 +178,7 @@ export default function SearchPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <LoadingOverlay isLoading={isFetching && !isLoading} />
       {/* 헤더 */}
       <div>
         <Link to="/issues" className="text-xs sm:text-sm text-gray-500 hover:text-gray-700">
@@ -223,12 +224,9 @@ export default function SearchPage() {
         )}
       </form>
 
-      {/* 로딩 / 에러 / 결과 */}
+      {/* 로딩 */}
       {isLoading && debouncedQuery.length >= 2 && (
-        <div className="text-center py-8">
-          <div className="inline-block w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-500 mt-2">검색 중...</p>
-        </div>
+        <LoadingOverlay isLoading={true} />
       )}
 
       {error && (

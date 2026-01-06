@@ -1,24 +1,20 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getDailyReport } from '../api/issues';
-import { CategoryBadge } from '../components/common';
+import { CategoryBadge, LoadingOverlay } from '../components/common';
 import type { DailyReportIssue } from '../types';
 
 export default function ReportPage() {
   const { date } = useParams<{ date: string }>();
 
-  const { data: report, isLoading, error } = useQuery({
+  const { data: report, isLoading, isFetching, error } = useQuery({
     queryKey: ['dailyReport', date],
     queryFn: () => getDailyReport(date!),
     enabled: !!date,
   });
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <p className="text-gray-500">로딩 중...</p>
-      </div>
-    );
+    return <LoadingOverlay isLoading={true} />;
   }
 
   if (error || !report) {
@@ -28,6 +24,8 @@ export default function ReportPage() {
       </div>
     );
   }
+
+  const showLoadingOverlay = isFetching && !isLoading;
 
   // 카테고리별 그룹핑
   const groupedByCategory = report.issues.reduce((acc, issue) => {
@@ -51,6 +49,7 @@ export default function ReportPage() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      <LoadingOverlay isLoading={showLoadingOverlay} />
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>

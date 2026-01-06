@@ -428,6 +428,43 @@ class EmailService:
             print(f"[EMAIL] 발송 실패: {e}")
             return False
 
+    def _convert_markdown_with_issue_links(
+        self,
+        markdown_text: str,
+        issue_map: dict[str, str],
+        base_url: str
+    ) -> str:
+        """마크다운을 HTML로 변환하고 이슈 이름을 링크로 변환
+
+        Args:
+            markdown_text: 마크다운 텍스트
+            issue_map: 이슈 이름 -> ID 매핑
+            base_url: 사이트 기본 URL
+        """
+        import markdown
+        import re
+
+        # 마크다운 -> HTML 변환
+        html = markdown.markdown(markdown_text, extensions=['tables', 'nl2br'])
+
+        # 이슈 이름을 링크로 변환 (긴 이름부터 처리)
+        if issue_map:
+            sorted_names = sorted(issue_map.keys(), key=len, reverse=True)
+            for name in sorted_names:
+                issue_id = issue_map[name]
+                issue_url = f"{base_url}/issues/{issue_id}"
+                link_html = f'<a href="{issue_url}" style="color: #d97706;">{name}</a>'
+                # 이미 <a> 태그 안에 있지 않은 텍스트만 변환
+                # 단순 문자열 replace 사용 (이미 링크된 것은 name이 정확히 일치하지 않음)
+                html = html.replace(f">{name}<", f">{link_html}<")
+                html = html.replace(f">{name} ", f">{link_html} ")
+                html = html.replace(f" {name}<", f" {link_html}<")
+                html = html.replace(f" {name} ", f" {link_html} ")
+                html = html.replace(f" {name},", f" {link_html},")
+                html = html.replace(f" {name}.", f" {link_html}.")
+
+        return html
+
     def send_daily_digest(
         self,
         recipient: str,
@@ -435,7 +472,8 @@ class EmailService:
         total_issues: int,
         new_issues_count: int,
         total_articles: int,
-        categories: list[dict],
+        digest_summary: str | None = None,
+        issue_map: dict[str, str] | None = None,
         base_url: str = "https://kimmykim.dev"
     ) -> bool:
         """데일리 다이제스트 이메일 발송
@@ -446,7 +484,8 @@ class EmailService:
             total_issues: 총 이슈 수
             new_issues_count: 신규 이슈 수
             total_articles: 총 기사 수
-            categories: 카테고리별 이슈 [{category, issues: [{id, name, article_count, is_new}], total_articles}]
+            digest_summary: LLM 생성 브리핑 마크다운 (optional)
+            issue_map: 이슈 이름 -> ID 매핑 (optional)
             base_url: 사이트 기본 URL
         """
         if not self.gmail_user or not self.gmail_app_password:
@@ -461,62 +500,70 @@ class EmailService:
 
             subject = f"[DISTILL] {date_display} 브리핑 - {total_issues}개 이슈"
 
-            # 카테고리별 이슈 HTML 생성
-            categories_html = ""
-            for cat in categories:
-                issues_list = ""
-                for issue in cat["issues"][:5]:  # 카테고리당 최대 5개
-                    new_badge = '<span style="background: #fee2e2; color: #dc2626; padding: 1px 6px; border-radius: 10px; font-size: 10px; margin-left: 4px;">NEW</span>' if issue.get("is_new") else ""
-                    issue_id = issue.get("id", "")
-                    issue_url = f"{base_url}/issues/{issue_id}" if issue_id else base_url
-                    issues_list += f"""
-                    <div style="padding: 8px 0; border-bottom: 1px solid #f3f4f6;">
-                        <a href="{issue_url}" style="font-weight: 500; color: #1f2937; text-decoration: none;">{issue['name']}</a>{new_badge}
-                        <span style="color: #9ca3af; font-size: 12px; margin-left: 8px;">기사 {issue.get('article_count', 0)}개</span>
+            # 브리핑 콘텐츠 생성
+            if digest_summary:
+                # LLM 생성 브리핑을 HTML로 변환 + 이슈 링크 적용
+                briefing_html = self._convert_markdown_with_issue_links(
+                    digest_summary,
+                    issue_map or {},
+                    base_url
+                )
+                content_html = f"""
+                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                    <div style="color: #1f2937; font-size: 14px; line-height: 1.6;">
+                        {briefing_html}
                     </div>
-                    """
-
-                if len(cat["issues"]) > 5:
-                    issues_list += f'<div style="padding: 8px 0; color: #6b7280; font-size: 12px;">외 {len(cat["issues"]) - 5}개 이슈...</div>'
-
-                categories_html += f"""
-                <div style="margin-bottom: 20px;">
-                    <div style="background: #fef3c7; padding: 6px 12px; border-radius: 6px; display: inline-block; margin-bottom: 8px;">
-                        <span style="font-weight: 600; color: #92400e;">{cat['category']}</span>
-                        <span style="color: #d97706; font-size: 12px; margin-left: 8px;">{len(cat['issues'])}개 이슈</span>
-                    </div>
-                    {issues_list}
                 </div>
+                """
+            else:
+                content_html = """
+                <p style="color: #6b7280;">오늘의 브리핑이 아직 준비되지 않았습니다.</p>
                 """
 
             html_body = f"""
             <html>
+            <head>
+                <style>
+                    h1 {{ font-size: 1.5rem; font-weight: 600; color: #92400e; margin: 16px 0 8px 0; }}
+                    h2 {{ font-size: 1.25rem; font-weight: 600; color: #92400e; margin: 16px 0 8px 0; }}
+                    h3 {{ font-size: 1rem; font-weight: 500; color: #1f2937; margin: 12px 0 6px 0; }}
+                    ul, ol {{ padding-left: 20px; margin: 8px 0; }}
+                    li {{ margin: 4px 0; }}
+                    table {{ border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 12px; }}
+                    th {{ background: #fef3c7; padding: 8px; text-align: left; border: 1px solid #fde68a; }}
+                    td {{ padding: 8px; border: 1px solid #e5e7eb; }}
+                    a {{ color: #d97706; }}
+                </style>
+            </head>
             <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f9fafb;">
                 <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <h2 style="color: #1b1b32; margin-bottom: 4px;">📰 {date_display} 브리핑</h2>
-                    <p style="color: #6b7280; margin-top: 0; margin-bottom: 20px;">어제 있었던 주요 이슈를 한눈에 확인하세요</p>
+                    <h2 style="color: #1b1b32; margin-bottom: 4px; font-size: 1.5rem;">📰 {date_display} 브리핑</h2>
+                    <p style="color: #6b7280; margin-top: 0; margin-bottom: 20px;">오늘의 주요 이슈를 한눈에 확인하세요</p>
 
                     <!-- 통계 요약 -->
-                    <div style="display: flex; gap: 12px; margin-bottom: 24px;">
-                        <div style="flex: 1; background: #f9fafb; padding: 12px; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 24px; font-weight: 700; color: #1f2937;">{total_issues}</div>
-                            <div style="font-size: 12px; color: #6b7280;">총 이슈</div>
-                        </div>
-                        <div style="flex: 1; background: #fef2f2; padding: 12px; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 24px; font-weight: 700; color: #dc2626;">{new_issues_count}</div>
-                            <div style="font-size: 12px; color: #6b7280;">신규 이슈</div>
-                        </div>
-                        <div style="flex: 1; background: #fffbeb; padding: 12px; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 24px; font-weight: 700; color: #d97706;">{total_articles}</div>
-                            <div style="font-size: 12px; color: #6b7280;">총 기사</div>
-                        </div>
-                    </div>
+                    <table style="width: 100%; margin-bottom: 24px; border: none;">
+                        <tr>
+                            <td style="background: #f9fafb; padding: 12px; border-radius: 8px; text-align: center; border: none; width: 33%;">
+                                <div style="font-size: 24px; font-weight: 700; color: #1f2937;">{total_issues}</div>
+                                <div style="font-size: 12px; color: #6b7280;">총 이슈</div>
+                            </td>
+                            <td style="background: #fef2f2; padding: 12px; border-radius: 8px; text-align: center; border: none; width: 33%;">
+                                <div style="font-size: 24px; font-weight: 700; color: #dc2626;">{new_issues_count}</div>
+                                <div style="font-size: 12px; color: #6b7280;">신규 이슈</div>
+                            </td>
+                            <td style="background: #fffbeb; padding: 12px; border-radius: 8px; text-align: center; border: none; width: 33%;">
+                                <div style="font-size: 24px; font-weight: 700; color: #d97706;">{total_articles}</div>
+                                <div style="font-size: 12px; color: #6b7280;">총 기사</div>
+                            </td>
+                        </tr>
+                    </table>
 
-                    <!-- 카테고리별 이슈 -->
-                    {categories_html}
+                    <!-- 브리핑 콘텐츠 -->
+                    {content_html}
 
                     <p style="color: #9ca3af; font-size: 12px; margin-top: 24px; text-align: center;">
                         이 메일은 DISTILL 데일리 다이제스트입니다.<br>
+                        <a href="{base_url}/digest/{digest_date}" style="color: #f59e0b;">웹에서 보기</a> ·
                         <a href="{base_url}" style="color: #f59e0b;">DISTILL 바로가기</a>
                     </p>
                 </div>

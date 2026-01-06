@@ -102,6 +102,7 @@ export interface DailyDigest {
   categories: DigestCategory[];
   updatedAt: string | null;
   digestSummary: string | null;
+  issueMap: Record<string, string> | null;  // 이슈 이름 -> ID 매핑 (브리핑 링크 생성용)
 }
 
 // ===== Calendar =====
@@ -112,6 +113,7 @@ export interface CalendarIssue {
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   displayDate: string | null;  // 달력 표시용 날짜 (created_at vs first_seen_at 크로스체크)
+  articleCount: number;  // 기사 수
 }
 
 // ===== Search =====

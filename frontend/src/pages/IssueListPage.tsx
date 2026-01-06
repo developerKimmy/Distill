@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getIssues } from '../api/issues';
-import { LoadingFallback, CategoryBadge } from '../components/common';
+import { LoadingFallback, LoadingOverlay, CategoryBadge } from '../components/common';
 import { useFollowMutation } from '../hooks';
 import { getCategoryColors } from '../utils/constants';
 import type { IssueListItem } from '../types';
@@ -79,7 +79,7 @@ export default function IssueListPage() {
   const queryKey = useMemo(() => ['issues', 1, 500], []);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey,
     queryFn: () => getIssues(1, 500),
   });
@@ -137,6 +137,7 @@ export default function IssueListPage() {
       error={error as Error | null}
       errorMessage="이슈를 불러올 수 없습니다."
     >
+      <LoadingOverlay isLoading={isFetching && !isLoading} />
       <div className="max-w-3xl mx-auto space-y-6">
         {/* 헤더 */}
         <div className="flex items-center justify-between">

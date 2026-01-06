@@ -94,9 +94,11 @@ def send_morning_digest(self):
     from sqlalchemy.orm import selectinload
     from app.auth.models import User
     from app.settings.models import UserSettings
-    from app.issues.service import IssueService
+    from app.issues.models import Issue, IssueArticle, DailyDigest, UNASSIGNED_ISSUE_ID
     from app.common.utils import EmailService
     from app.core.config import settings
+    from sqlalchemy import func
+    from collections import defaultdict
 
     print("[DIGEST] Morning digest started")
 
@@ -104,7 +106,8 @@ def send_morning_digest(self):
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
     today_kst = now_kst.date()
-    yesterday = (today_kst - timedelta(days=1)).isoformat()
+    yesterday_date = today_kst - timedelta(days=1)
+    yesterday = yesterday_date.isoformat()
     print(f"[DIGEST] KST now: {now_kst.isoformat()}, yesterday (target): {yesterday}")
 
     try:
@@ -126,12 +129,11 @@ def send_morning_digest(self):
                 print("[DIGEST] No users with email notifications enabled")
                 return {"status": "skipped", "reason": "no_users"}
 
-            # 어제 수집된 기사를 이슈별로 그룹핑하여 조회
-            from app.issues.models import Issue, IssueArticle, UNASSIGNED_ISSUE_ID
-            from sqlalchemy import func
-            from collections import defaultdict
-
-            yesterday_date = today_kst - timedelta(days=1)
+            # DailyDigest에서 어제 브리핑 조회
+            digest_stmt = select(DailyDigest).where(DailyDigest.date == yesterday_date)
+            digest_result = db.execute(digest_stmt)
+            daily_digest = digest_result.scalar_one_or_none()
+            digest_summary = daily_digest.summary if daily_digest else None
 
             # 어제 수집된 기사를 이슈별로 카운트 (UNASSIGNED 제외)
             stmt = (
@@ -149,40 +151,21 @@ def send_morning_digest(self):
             )
             results = list(db.execute(stmt).all())
 
-            if not results:
-                print(f"[DIGEST] No articles for {yesterday}")
+            if not results and not digest_summary:
+                print(f"[DIGEST] No articles and no digest for {yesterday}")
                 return {"status": "skipped", "reason": "no_data"}
 
-            # 카테고리별 그룹핑
-            by_category = defaultdict(list)
+            # 통계 및 issue_map 생성
             total_articles = 0
             new_issues_count = 0
+            issue_map = {}  # 이슈 이름 -> ID 매핑
 
             for issue, article_count in results:
-                category = issue.category or "기타"
                 is_new = issue.first_seen_at == yesterday_date
-
                 if is_new:
                     new_issues_count += 1
-
-                by_category[category].append({
-                    "id": str(issue.id),
-                    "name": issue.name,
-                    "article_count": article_count,
-                    "is_new": is_new,
-                })
                 total_articles += article_count
-
-            # 카테고리 데이터 구조화
-            category_order = ["정치", "경제", "사회", "세계", "IT/과학", "연예", "스포츠", "기타"]
-            categories = []
-            for cat in category_order:
-                if cat in by_category:
-                    categories.append({
-                        "category": cat,
-                        "issues": by_category[cat],
-                        "total_articles": sum(i["article_count"] for i in by_category[cat])
-                    })
+                issue_map[issue.name] = str(issue.id)
 
             # 이메일 발송
             email_service = None
@@ -205,7 +188,8 @@ def send_morning_digest(self):
                         total_issues=len(results),
                         new_issues_count=new_issues_count,
                         total_articles=total_articles,
-                        categories=categories
+                        digest_summary=digest_summary,
+                        issue_map=issue_map
                     )
                     if success:
                         sent_count += 1

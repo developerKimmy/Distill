@@ -143,6 +143,7 @@ class DailyDigestResponse(BaseSchema):
     categories: list[DigestCategoryGroup]
     updated_at: datetime | None = None
     digest_summary: str | None = None
+    issue_map: dict[str, str] | None = None  # 이슈 이름 -> ID 매핑 (브리핑 링크 생성용)
 
 
 # ===== Calendar =====
@@ -154,6 +155,7 @@ class CalendarIssueResponse(BaseSchema):
     first_seen_at: date | None
     last_seen_at: date | None
     display_date: date | None  # 달력 표시용 날짜 (created_at vs first_seen_at 크로스체크)
+    article_count: int = 0  # 기사 수
 
 
 # ===== NER Result =====

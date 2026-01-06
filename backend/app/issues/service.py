@@ -36,21 +36,26 @@ class IssueService:
         display_date 계산 로직:
         - created_at과 first_seen_at 차이가 한 달 이상 → created_at 사용
         - 차이가 한 달 이하 → first_seen_at 사용
+
+        정렬: 기사 수 내림차순
         """
-        stmt = select(Issue).where(Issue.status == "active")
+        stmt = (
+            select(Issue)
+            .where(Issue.status == "active")
+            .options(selectinload(Issue.articles))
+        )
 
         if categories:
             stmt = stmt.where(Issue.category.in_(categories))
 
-        stmt = stmt.order_by(Issue.last_seen_at.desc())
-
         result = await self.db.execute(stmt)
         issues = list(result.scalars().all())
 
-        # display_date 계산해서 반환
+        # display_date 계산 및 기사 수 포함
         calendar_issues = []
         for issue in issues:
             display_date = self._calculate_display_date(issue)
+            article_count = len(issue.articles) if issue.articles else 0
             calendar_issues.append({
                 "id": str(issue.id),
                 "name": issue.name,
@@ -58,7 +63,11 @@ class IssueService:
                 "first_seen_at": issue.first_seen_at,
                 "last_seen_at": issue.last_seen_at,
                 "display_date": display_date,
+                "article_count": article_count,
             })
+
+        # 기사 수 내림차순 정렬
+        calendar_issues.sort(key=lambda x: x["article_count"], reverse=True)
 
         return calendar_issues
 
@@ -403,6 +412,9 @@ class IssueService:
             if all_articles:
                 updated_at = max(a.collected_at for a in all_articles if a.collected_at)
 
+        # 이슈 이름 -> ID 매핑 (브리핑 텍스트에서 링크 생성용)
+        issue_map = {issue.name: str(issue.id) for issue in issues}
+
         return {
             "date": digest_date,
             "total_issues": len(issues),
@@ -411,4 +423,5 @@ class IssueService:
             "categories": categories,
             "updated_at": updated_at,
             "digest_summary": digest_summary,
+            "issue_map": issue_map,
         }

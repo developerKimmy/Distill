@@ -22,6 +22,8 @@ import { ko } from 'date-fns/locale';
 import { getIssuesForCalendar, getBatchDates, type CalendarIssue } from '../api/issues';
 import { WEEKDAYS, getCategoryColors } from '../utils/constants';
 import { parseLocalDate } from '../utils/dateFormat';
+import { getStoredCategories } from '../utils/categories';
+import { LoadingOverlay } from '../components/common';
 
 interface WeekIssue {
   issue: CalendarIssue;
@@ -100,17 +102,19 @@ function calculateWeekIssues(weekDays: Date[], issues: CalendarIssue[] | undefin
     return !isAfter(issueStart, weekEnd) && !isBefore(issueEnd, weekStart);
   });
 
+  // 기사 수 내림차순 정렬, 같으면 시작일 오름차순
   weekIssues.sort((a, b) => {
+    // 1차: 기사 수 내림차순
+    if (b.articleCount !== a.articleCount) {
+      return b.articleCount - a.articleCount;
+    }
+    // 2차: 시작일 오름차순
     const aStartStr = getIssueStartDate(a);
     const bStartStr = getIssueStartDate(b);
-    if (!aStartStr || !bStartStr || !a.lastSeenAt || !b.lastSeenAt) return 0;
+    if (!aStartStr || !bStartStr) return 0;
     const aStart = max([parseLocalDate(aStartStr), minStartDate]);
     const bStart = max([parseLocalDate(bStartStr), minStartDate]);
-    const aDuration = parseLocalDate(a.lastSeenAt).getTime() - aStart.getTime();
-    const bDuration = parseLocalDate(b.lastSeenAt).getTime() - bStart.getTime();
-    return aStart.getTime() !== bStart.getTime()
-      ? aStart.getTime() - bStart.getTime()
-      : bDuration - aDuration;
+    return aStart.getTime() - bStart.getTime();
   });
 
   weekIssues.forEach((issue) => {
@@ -159,15 +163,19 @@ export default function CalendarPage() {
 
   const today = startOfDay(new Date());
 
-  const { data: issues } = useQuery({
-    queryKey: ['issues-calendar'],
+  const categories = getStoredCategories();
+
+  const { data: issues, isFetching: isIssuesFetching } = useQuery({
+    queryKey: ['issues-calendar', categories],
     queryFn: getIssuesForCalendar,
   });
 
-  const { data: batchDates } = useQuery({
-    queryKey: ['batchDates', currentMonth.getFullYear(), currentMonth.getMonth() + 1],
+  const { data: batchDates, isFetching: isBatchFetching } = useQuery({
+    queryKey: ['batchDates', currentMonth.getFullYear(), currentMonth.getMonth() + 1, categories],
     queryFn: () => getBatchDates(currentMonth.getFullYear(), currentMonth.getMonth() + 1),
   });
+
+  const isLoading = isIssuesFetching || isBatchFetching;
 
   const activeDates = useMemo(() => new Set(batchDates || []), [batchDates]);
 
@@ -207,6 +215,8 @@ export default function CalendarPage() {
 
   return (
     <div className="max-w-5xl mx-auto">
+      <LoadingOverlay isLoading={isLoading} />
+
       {/* 캘린더 */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {/* 헤더 */}
@@ -278,22 +288,6 @@ export default function CalendarPage() {
                       `}
                     >
                       <div className="flex items-start justify-between">
-                        {/* 브리핑 버튼 - 활성 날짜만 표시 */}
-                        {isCurrentMonth && !disabled && activeDates.has(format(date, 'yyyy-MM-dd')) ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/digest/${format(date, 'yyyy-MM-dd')}`);
-                            }}
-                            className="w-4 h-4 sm:w-auto sm:h-auto sm:px-1 sm:py-0.5 flex items-center justify-center bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors"
-                            title="브리핑 보기"
-                          >
-                            <span className="hidden sm:inline text-[10px]">브리핑</span>
-                            <svg className="w-2.5 h-2.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          </button>
-                        ) : null}
                         <span
                           className={`
                             inline-flex items-center justify-center w-5 h-5 sm:w-7 sm:h-7 text-xs sm:text-sm
@@ -307,6 +301,22 @@ export default function CalendarPage() {
                         >
                           {format(date, 'd')}
                         </span>
+                        {/* 브리핑 버튼 - 활성 날짜만 표시 */}
+                        {isCurrentMonth && !disabled && activeDates.has(format(date, 'yyyy-MM-dd')) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/digest/${format(date, 'yyyy-MM-dd')}`);
+                            }}
+                            className="w-4 h-4 sm:w-auto sm:h-auto sm:px-1 sm:py-0.5 flex items-center justify-center bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors"
+                            title="브리핑 보기"
+                          >
+                            <span className="hidden sm:inline text-[10px]">브리핑</span>
+                            <svg className="w-2.5 h-2.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                       {hiddenIssues.length > 0 && (
                         <button
@@ -326,7 +336,7 @@ export default function CalendarPage() {
               </div>
 
               <div
-                className="absolute left-0 right-0 pointer-events-none overflow-hidden top-[24px] sm:top-[36px]"
+                className="absolute left-0 right-0 pointer-events-none overflow-hidden top-[32px] sm:top-[48px]"
                 style={{ height: `${maxVisibleRows * issueRowHeight}px` }}
               >
                 {weekIssues
@@ -350,11 +360,13 @@ export default function CalendarPage() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMorePopup(null)} />
           <div
-            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 max-w-xs"
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[calc(100vw-32px)] sm:w-auto sm:max-w-xs left-4 sm:left-auto right-4 sm:right-auto"
             style={{
-              left: Math.min(morePopup.position.x, window.innerWidth - 300),
-              top: morePopup.position.y,
-              maxHeight: '300px',
+              ...(window.innerWidth >= 640 && {
+                left: Math.min(morePopup.position.x, window.innerWidth - 300),
+              }),
+              top: Math.min(morePopup.position.y, window.innerHeight - 320),
+              maxHeight: '280px',
               overflowY: 'auto',
             }}
           >
