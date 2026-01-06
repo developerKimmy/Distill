@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import PrivateRoute from './components/PrivateRoute';
@@ -61,6 +61,9 @@ export default function App() {
               }
             />
           </Route>
+
+          {/* 정의되지 않은 경로는 홈으로 리다이렉트 */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
