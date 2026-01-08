@@ -62,6 +62,7 @@ async def list_issues_for_calendar(
             last_seen_at=issue["last_seen_at"],
             display_date=issue["display_date"],
             article_count=issue["article_count"],
+            collected_dates=issue["collected_dates"],
         )
         for issue in issues
     ]
@@ -310,13 +311,14 @@ async def get_daily_report(
 @report_router.get("/digest/{digest_date}", response_model=DailyDigestResponse)
 async def get_daily_digest(
         digest_date: date,
+        categories: str | None = Query(None, description="카테고리 필터 (쉼표 구분)"),
         db: AsyncSession = Depends(get_async_session),
         user: User | None = Depends(optional_current_user),
 ):
-    """데일리 다이제스트 조회 - 비로그인 허용, 로그인 시 카테고리 필터 적용"""
-    # 로그인한 사용자의 카테고리 필터 가져오기
-    category_filter = None
-    if user:
+    """데일리 다이제스트 조회 - 비로그인 허용, 카테고리 필터 적용"""
+    # 쿼리 파라미터 우선, 없으면 로그인한 사용자의 DB 설정 사용
+    category_filter = get_categories_from_query(categories)
+    if not category_filter and user:
         settings_stmt = select(UserSettings).where(UserSettings.user_id == user.id)
         settings_result = await db.execute(settings_stmt)
         user_settings = settings_result.scalar_one_or_none()

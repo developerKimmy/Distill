@@ -156,6 +156,7 @@ class CalendarIssueResponse(BaseSchema):
     last_seen_at: date | None
     display_date: date | None  # 달력 표시용 날짜 (created_at vs first_seen_at 크로스체크)
     article_count: int = 0  # 기사 수
+    collected_dates: list[str] = []  # 기사가 실제 수집된 날짜 목록 (캘린더 +N 계산용)
 
 
 # ===== NER Result =====

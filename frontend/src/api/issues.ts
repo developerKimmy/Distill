@@ -70,7 +70,9 @@ export const unfollowIssue = async (issueId: string): Promise<{ message: string;
 
 // 데일리 다이제스트 조회
 export const getDailyDigest = async (date: string): Promise<DailyDigest> => {
-  const { data } = await client.get(`/reports/digest/${date}`);
+  const { data } = await client.get(`/reports/digest/${date}`, {
+    params: getCategoryParams(),
+  });
   return data;
 };
 

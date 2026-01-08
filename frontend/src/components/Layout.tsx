@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useIsFetching } from '@tanstack/react-query';
 import logo from '../assets/distill_light.svg';
 import CategoryFilter from './CategoryFilter';
 import NotificationBell from './NotificationBell';
@@ -10,6 +11,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const loggedIn = isLoggedIn();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isFetching = useIsFetching();
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -104,7 +106,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-stone-50">
       {/* 헤더 */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200 relative">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/">
             <img src={logo} alt="DISTILL" className="h-10 sm:h-14" />
@@ -137,6 +139,24 @@ export default function Layout() {
           <nav className="md:hidden border-t border-gray-200 px-4 py-3 space-y-1 bg-white">
             <NavLinks mobile />
           </nav>
+        )}
+
+        {/* 전역 로딩바 */}
+        {isFetching > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-200 overflow-hidden">
+            <div
+              className="h-full bg-amber-500 w-1/3"
+              style={{
+                animation: 'loading-bar 1s ease-in-out infinite',
+              }}
+            />
+            <style>{`
+              @keyframes loading-bar {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(400%); }
+              }
+            `}</style>
+          </div>
         )}
       </header>
 

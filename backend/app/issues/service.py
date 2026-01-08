@@ -37,6 +37,8 @@ class IssueService:
         - created_at과 first_seen_at 차이가 한 달 이상 → created_at 사용
         - 차이가 한 달 이하 → first_seen_at 사용
 
+        collected_dates: 기사가 실제 수집된 날짜 목록 (캘린더 +N 계산용)
+
         정렬: 기사 수 내림차순
         """
         stmt = (
@@ -56,6 +58,14 @@ class IssueService:
         for issue in issues:
             display_date = self._calculate_display_date(issue)
             article_count = len(issue.articles) if issue.articles else 0
+
+            # 기사가 수집된 날짜 목록 (KST 기준, 중복 제거)
+            collected_dates = list(set(
+                a.collected_at.astimezone(KST).date().isoformat()
+                for a in (issue.articles or [])
+                if a.collected_at
+            ))
+
             calendar_issues.append({
                 "id": str(issue.id),
                 "name": issue.name,
@@ -64,6 +74,7 @@ class IssueService:
                 "last_seen_at": issue.last_seen_at,
                 "display_date": display_date,
                 "article_count": article_count,
+                "collected_dates": collected_dates,
             })
 
         # 기사 수 내림차순 정렬

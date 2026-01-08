@@ -2,9 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getNotificationSettings, updateNotificationSettings } from '../api/settings';
 import { AVAILABLE_CATEGORIES } from '../types';
+import { setStoredCategories } from '../utils/categories';
+import { useInvalidateCategoryQueries } from '../hooks';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
+  const invalidateCategoryQueries = useInvalidateCategoryQueries();
   const [enabled, setEnabled] = useState(true);
   const [categories, setCategories] = useState<string[]>([]);
 
@@ -41,10 +44,13 @@ export default function SettingsPage() {
   const updateMutation = useMutation({
     mutationFn: (data: { enabled?: boolean; categories?: string[] }) =>
       updateNotificationSettings(data),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['notificationSettings'] });
-      // 카테고리 변경 시 다이제스트 캐시도 무효화
-      queryClient.invalidateQueries({ queryKey: ['daily-digest'] });
+      // 카테고리 변경 시 localStorage와 관련 쿼리 동기화
+      if (variables.categories !== undefined) {
+        setStoredCategories(variables.categories);
+        invalidateCategoryQueries();
+      }
     },
   });
 

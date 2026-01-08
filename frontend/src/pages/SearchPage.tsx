@@ -58,12 +58,12 @@ function IssueResultCard({ issue }: { issue: IssueSearchResult }) {
 
 // 기사 검색 결과 카드
 function ArticleResultCard({ article }: { article: ArticleSearchResult }) {
+  const navigate = useNavigate();
+
   return (
-    <a
-      href={article.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block p-3 bg-white border border-gray-200 rounded-lg hover:border-amber-300 hover:shadow-sm transition-all"
+    <div
+      onClick={() => window.open(article.url, '_blank')}
+      className="block p-3 bg-white border border-gray-200 rounded-lg hover:border-amber-300 hover:shadow-sm transition-all cursor-pointer"
     >
       <p className="font-medium text-gray-900 text-sm line-clamp-2">{article.title}</p>
       {article.description && (
@@ -73,16 +73,18 @@ function ArticleResultCard({ article }: { article: ArticleSearchResult }) {
         {article.press && <span>{article.press}</span>}
         {article.publishedAt && <span>· {formatFullDate(article.publishedAt)}</span>}
         {article.issueName && article.issueId && (
-          <Link
-            to={`/issues/${article.issueId}`}
-            onClick={(e) => e.stopPropagation()}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/issues/${article.issueId}`);
+            }}
             className="text-amber-600 hover:underline"
           >
             {article.issueName}
-          </Link>
+          </button>
         )}
       </div>
-    </a>
+    </div>
   );
 }
 
@@ -115,13 +117,15 @@ function ContentResultCard({ content }: { content: ContentSearchResult }) {
       )}
       <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400">
         {content.issueName && content.issueId && (
-          <Link
-            to={`/issues/${content.issueId}`}
-            onClick={(e) => e.stopPropagation()}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/issues/${content.issueId}`);
+            }}
             className="text-amber-600 hover:underline"
           >
             {content.issueName} →
-          </Link>
+          </button>
         )}
         {content.createdAt && <span>· {formatFullDate(content.createdAt)}</span>}
       </div>

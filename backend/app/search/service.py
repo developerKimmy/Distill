@@ -57,22 +57,23 @@ class SearchService:
         """
         query_embedding = self.embedding_provider.embed(query)
 
-        # pgvector 유사도 검색
+        # pgvector 유사도 검색 + 기사 수 서브쿼리
         stmt = text("""
             SELECT
-                id,
-                name,
-                category,
-                what_type,
-                what_summary,
-                first_seen_at,
-                last_seen_at,
-                status,
-                1 - (name_embedding <=> CAST(:embedding AS vector)) as similarity
-            FROM issues
-            WHERE name_embedding IS NOT NULL
-              AND status = 'active'
-            ORDER BY name_embedding <=> CAST(:embedding AS vector)
+                i.id,
+                i.name,
+                i.category,
+                i.what_type,
+                i.what_summary,
+                i.first_seen_at,
+                i.last_seen_at,
+                i.status,
+                1 - (i.name_embedding <=> CAST(:embedding AS vector)) as similarity,
+                (SELECT COUNT(*) FROM issue_articles WHERE issue_id = i.id) as article_count
+            FROM issues i
+            WHERE i.name_embedding IS NOT NULL
+              AND i.status = 'active'
+            ORDER BY i.name_embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
         """)
 
@@ -92,7 +93,8 @@ class SearchService:
                 "first_seen_at": row[5].isoformat() if row[5] else None,
                 "last_seen_at": row[6].isoformat() if row[6] else None,
                 "status": row[7],
-                "similarity": float(row[8])
+                "similarity": float(row[8]),
+                "article_count": row[9] or 0
             }
             for row in rows
             if row[8] >= settings.SEARCH_MIN_SIMILARITY

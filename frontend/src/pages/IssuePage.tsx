@@ -85,6 +85,73 @@ function ContentCard({ content }: { content: IssueContent }) {
   );
 }
 
+// 콘텐츠 목록 컴포넌트 (날짜별 구분)
+function ContentList({ contents }: { contents: IssueContent[] }) {
+  // 날짜별로 콘텐츠 그룹핑
+  const groupedContents = useMemo(() => {
+    const groups = new Map<string, IssueContent[]>();
+    for (const content of contents) {
+      const dateKey = content.createdAt?.split('T')[0] || 'unknown';
+      if (!groups.has(dateKey)) {
+        groups.set(dateKey, []);
+      }
+      groups.get(dateKey)!.push(content);
+    }
+    // 날짜순 정렬 (최신순)
+    return new Map(
+      [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+    );
+  }, [contents]);
+
+  const sortedDates = useMemo(() => [...groupedContents.keys()].filter(d => d !== 'unknown'), [groupedContents]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // 선택된 날짜의 콘텐츠들
+  const selectedContents = useMemo(() => {
+    const date = selectedDate || sortedDates[0];
+    if (!date) return [];
+    return groupedContents.get(date) || [];
+  }, [selectedDate, sortedDates, groupedContents]);
+
+  // 날짜가 하나뿐이면 버튼 없이 바로 표시
+  if (sortedDates.length <= 1) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-base sm:text-lg font-semibold">📝 생성된 콘텐츠</h2>
+        {contents.map((content) => (
+          <ContentCard key={content.id} content={content} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 날짜 선택 버튼 */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+        {sortedDates.map((date) => (
+          <button
+            key={date}
+            onClick={() => setSelectedDate(date)}
+            className={`px-3 py-1.5 rounded-full text-xs sm:text-sm whitespace-nowrap transition-colors ${
+              (selectedDate || sortedDates[0]) === date
+                ? 'bg-amber-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {formatShortDate(date)}
+          </button>
+        ))}
+      </div>
+      <h2 className="text-base sm:text-lg font-semibold">📝 생성된 콘텐츠</h2>
+      {/* 선택된 날짜의 콘텐츠 */}
+      {selectedContents.map((content) => (
+        <ContentCard key={content.id} content={content} />
+      ))}
+    </div>
+  );
+}
+
 export default function IssuePage() {
   const { issueId } = useParams<{ issueId: string }>();
 
@@ -215,12 +282,7 @@ export default function IssuePage() {
 
           {/* 콘텐츠 */}
           {issue.contents && issue.contents.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="text-base sm:text-lg font-semibold">📝 생성된 콘텐츠</h2>
-              {issue.contents.map((content) => (
-                <ContentCard key={content.id} content={content} />
-              ))}
-            </div>
+            <ContentList contents={issue.contents} />
           )}
 
           {/* 비로그인 CTA */}

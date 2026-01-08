@@ -8,4 +8,5 @@ class BaseSchema(BaseModel):
         alias_generator=to_camel,   # snake_case → camelCase 변환
         populate_by_name=True,      # 원래 이름(snake)으로도 접근 가능
         from_attributes=True,       # SQLAlchemy 모델에서 직접 변환 허용
+        serialize_by_alias=True,    # 응답 시 camelCase로 직렬화
     )

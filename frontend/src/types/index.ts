@@ -114,6 +114,7 @@ export interface CalendarIssue {
   lastSeenAt: string | null;
   displayDate: string | null;  // 달력 표시용 날짜 (created_at vs first_seen_at 크로스체크)
   articleCount: number;  // 기사 수
+  collectedDates: string[];  // 기사가 실제 수집된 날짜 목록 (캘린더 +N 계산용)
 }
 
 // ===== Search =====

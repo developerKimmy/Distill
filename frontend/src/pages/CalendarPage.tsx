@@ -268,8 +268,15 @@ export default function CalendarPage() {
                   const isToday = isSameDay(date, today);
                   const disabled = isDisabled(date);
                   const dayOfWeek = date.getDay();
+                  const dateStr = format(date, 'yyyy-MM-dd');
+                  // 해당 날짜에 실제 기사가 수집된 이슈 중 화면에 표시되지 않은 것만 카운트
                   const hiddenIssues = weekIssues
-                    .filter((wi) => wi.startCol <= dayIdx && wi.endCol >= dayIdx && wi.row >= maxVisibleRows)
+                    .filter((wi) =>
+                      wi.startCol <= dayIdx &&
+                      wi.endCol >= dayIdx &&
+                      wi.row >= maxVisibleRows &&
+                      wi.issue.collectedDates?.includes(dateStr)
+                    )
                     .map((wi) => wi.issue);
 
                   return (
