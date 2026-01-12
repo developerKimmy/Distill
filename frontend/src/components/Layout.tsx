@@ -114,7 +114,7 @@ export default function Layout() {
 
           {/* 데스크탑 네비게이션 */}
           <nav className="hidden md:flex items-center gap-4">
-            <NavLinks />
+            {NavLinks({ mobile: false })}
           </nav>
 
           {/* 모바일 햄버거 버튼 */}
@@ -137,7 +137,7 @@ export default function Layout() {
         {/* 모바일 메뉴 */}
         {mobileMenuOpen && (
           <nav className="md:hidden border-t border-gray-200 px-4 py-3 space-y-1 bg-white">
-            <NavLinks mobile />
+            {NavLinks({ mobile: true })}
           </nav>
         )}
 

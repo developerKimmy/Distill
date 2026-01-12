@@ -17,7 +17,6 @@ export function useUnreadCount() {
     queryKey: UNREAD_COUNT_KEY,
     queryFn: getUnreadCount,
     staleTime: 60 * 1000, // 1분간 fresh 유지
-    refetchInterval: 60 * 1000, // 1분마다 폴링
     retry: false,
   });
 }
