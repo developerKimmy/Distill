@@ -18,6 +18,7 @@ export function useUnreadCount() {
     queryFn: getUnreadCount,
     staleTime: 0, // 항상 fresh하게
     refetchInterval: 60 * 1000, // 1분마다 폴링
+    retry: false, // 401 에러 시 무한 재시도 방지
   });
 }
 
