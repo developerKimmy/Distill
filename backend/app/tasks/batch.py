@@ -136,6 +136,9 @@ def send_morning_digest(self):
             digest_summary = daily_digest.summary if daily_digest else None
 
             # 어제 수집된 기사를 이슈별로 카운트 (UNASSIGNED 제외)
+            # KST 기준 datetime range 사용 (웹과 동일한 방식)
+            start_of_day = datetime.combine(yesterday_date, datetime.min.time(), tzinfo=KST)
+            end_of_day = datetime.combine(yesterday_date, datetime.max.time(), tzinfo=KST)
             stmt = (
                 select(
                     Issue,
@@ -143,7 +146,8 @@ def send_morning_digest(self):
                 )
                 .join(IssueArticle, Issue.id == IssueArticle.issue_id)
                 .where(
-                    func.date(IssueArticle.collected_at) == yesterday_date,
+                    IssueArticle.collected_at >= start_of_day,
+                    IssueArticle.collected_at <= end_of_day,
                     Issue.id != UNASSIGNED_ISSUE_ID
                 )
                 .group_by(Issue.id)
