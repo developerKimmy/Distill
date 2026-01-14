@@ -27,11 +27,11 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    # Agent 사이클 실행 (5시간마다: 0, 5, 10, 15, 20시)
+    # Agent 사이클 실행 (하루 2회: 오전 8시, 오후 6시)
     # 뉴스 수집 → 클러스터링 → 이벤트 감지 → 즉시 알림
     "run-agent-cycle": {
         "task": "app.tasks.agent.run_agent_cycle",
-        "schedule": crontab(hour="0,5,10,15,20", minute=0),  # 5시간마다
+        "schedule": crontab(hour="8,18", minute=0),  # 하루 2회
     },
     # 데일리 다이제스트 생성 (매일 오후 11시)
     # 오늘 하루 이슈를 요약해서 다이제스트 생성

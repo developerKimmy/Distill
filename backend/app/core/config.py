@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     # Frontend URL (매직 링크 등에 사용)
     FRONTEND_URL: str = "https://kimmykim.dev"
 
-    # Global Batch Schedule (하루 3회)
-    BATCH_SCHEDULE: str = "06:00,12:00,18:00"
+    # Global Batch Schedule (하루 2회)
+    BATCH_SCHEDULE: str = "08:00,18:00"
 
     # Cron Secret (Render Cron 요청 검증용, 선택)
     CRON_SECRET: str = ""
