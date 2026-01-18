@@ -5,17 +5,20 @@
 2. Embedding cross-check: Entity 매칭된 이슈들 중 임베딩 유사도 비교
 3. 둘 다 통과해야 매칭, 아니면 새 이슈 생성
 """
+import json
 import logging
 from datetime import datetime, timezone, timedelta, date
 from uuid import UUID
 from sqlalchemy import select, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from openai import OpenAI
 
 from app.monitoring.state import (
     MonitoringState, ArticleData, NERData, MatchResult
 )
 from app.core.agent.tools import EmbeddingProvider
 from app.monitoring.collectors import NaverNewsProvider
+from app.core.prompts import ner_extraction_prompt
 # 모든 모델 올바른 순서로 로드
 import app.core.models  # noqa: F401
 from app.issues.models import (
@@ -36,6 +39,12 @@ class MatchNode:
     def __init__(self):
         self.embedding_provider = EmbeddingProvider()
         self.naver = NaverNewsProvider()
+        # NER용 LLM 클라이언트
+        self.llm = OpenAI(
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com/v1"
+        )
+        self.llm_model = "deepseek-chat"
 
     async def __call__(
         self,
@@ -549,7 +558,7 @@ class MatchNode:
         entity_type: str,
         db: AsyncSession
     ) -> Entity | None:
-        """엔티티 조회 또는 생성"""
+        """엔티티 조회 또는 생성 (race condition 방지)"""
         if not name:
             return None
 
@@ -564,15 +573,23 @@ class MatchNode:
         if entity:
             return entity
 
-        # 새로 생성
-        entity = Entity(
-            name=name,
-            type=entity_type,
-            aliases=[],
-        )
-        db.add(entity)
-        await db.flush()
-        return entity
+        # 새로 생성 (중복 시 재조회)
+        try:
+            entity = Entity(
+                name=name,
+                type=entity_type,
+                aliases=[],
+            )
+            db.add(entity)
+            await db.flush()
+            return entity
+        except Exception as e:
+            # 중복 에러 시 롤백하고 다시 조회
+            if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+                await db.rollback()
+                result = await db.execute(query)
+                return result.scalar_one_or_none()
+            raise
 
     async def _save_article(
         self,
@@ -817,7 +834,7 @@ class MatchNode:
         issue: Issue,
         db: AsyncSession
     ) -> int:
-        """새 이슈에 대해 Naver 검색으로 추가 기사 수집"""
+        """새 이슈에 대해 Naver 검색으로 추가 기사 수집 + NER 추출"""
         try:
             # 이슈 이름에서 검색 키워드 추출 (첫 번째 entity 또는 이슈 이름)
             search_query = issue.name[:30]  # 너무 길면 잘라서 검색
@@ -836,15 +853,36 @@ class MatchNode:
                 row[0].split("?")[0].rstrip("/") for row in existing_result.all()
             }
 
+            # 신규 기사만 필터링
+            new_articles = []
+            for news_item in results:
+                normalized_url = news_item.url.split("?")[0].rstrip("/")
+                if normalized_url not in existing_urls:
+                    new_articles.append(news_item)
+                    existing_urls.add(normalized_url)
+
+            if not new_articles:
+                return 0
+
+            # NER 추출 (배치)
+            ner_results = self._extract_ner_batch(new_articles)
+
             now = datetime.now(KST)
             added_count = 0
 
-            for news_item in results:
+            for i, news_item in enumerate(new_articles):
                 normalized_url = news_item.url.split("?")[0].rstrip("/")
-                if normalized_url in existing_urls:
-                    continue
 
-                # 기사 저장 (정규화된 URL 사용)
+                # NER 결과 가져오기
+                ner_data = ner_results.get(i, {})
+                entities_json = {
+                    "who": ner_data.get("who", []),
+                    "where": ner_data.get("where", []),
+                    "what_type": ner_data.get("what_type"),
+                    "what_summary": ner_data.get("what_summary"),
+                }
+
+                # 기사 저장
                 article = IssueArticle(
                     issue_id=issue.id,
                     title=news_item.title,
@@ -854,22 +892,76 @@ class MatchNode:
                     source="naver",
                     published_at=news_item.published_at,
                     collected_at=now,
-                    entities={},
+                    entities=entities_json,
                     status="matched",
                     matched_at=now,
                 )
                 db.add(article)
                 added_count += 1
-                existing_urls.add(normalized_url)  # 같은 배치 내 중복 방지
 
             if added_count > 0:
                 await db.flush()
+                logger.info(f"Naver 추가 수집 + NER: {added_count}개 ({issue.name})")
 
             return added_count
 
         except Exception as e:
             logger.warning(f"Naver 추가 수집 실패 ({issue.name}): {e}")
             return 0
+
+    def _extract_ner_batch(self, articles: list) -> dict[int, dict]:
+        """기사 배치에서 NER 추출
+
+        Returns:
+            {인덱스: {"who": [...], "where": [...], "what_type": ..., "what_summary": ...}}
+        """
+        if not articles:
+            return {}
+
+        try:
+            # 프롬프트용 데이터 준비
+            prompt_articles = [
+                {
+                    "idx": i,
+                    "title": article.title,
+                    "description": article.description[:200] if article.description else None,
+                }
+                for i, article in enumerate(articles)
+            ]
+
+            prompt = ner_extraction_prompt(prompt_articles)
+
+            # LLM 호출
+            response = self.llm.chat.completions.create(
+                model=self.llm_model,
+                messages=[
+                    {"role": "system", "content": "뉴스 기사에서 핵심 정보를 추출하는 NER 시스템입니다. JSON만 출력합니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+
+            content = response.choices[0].message.content
+            data = json.loads(content)
+
+            # idx별로 정리
+            result = {}
+            for item in data.get("results", []):
+                idx = item.get("idx")
+                if idx is not None:
+                    result[idx] = {
+                        "who": item.get("who", []),
+                        "where": item.get("where", []),
+                        "what_type": item.get("what_type"),
+                        "what_summary": item.get("what_summary"),
+                    }
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"NER 추출 실패: {e}")
+            return {}
 
 
 # 싱글톤 인스턴스
